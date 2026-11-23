@@ -1,0 +1,6 @@
+{
+  "name": "D Studio",
+  "description": "副屏壁纸、动态时钟主题与桌面硬件显示控制中心",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
