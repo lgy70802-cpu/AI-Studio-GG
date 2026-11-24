@@ -35,6 +35,7 @@ import { PluginCenterView } from './PluginCenterView';
 import { PomodoroRuntimeState } from './PluginWidgets';
 import { CreatorStudioHub } from './editor/CreatorStudioHub';
 import { ThemeEditorV2 } from './editor/ThemeEditorV2';
+import type { SidebarMode } from './Sidebar';
 import { EditorThemeProject } from '../types/editor';
 
 interface SecondaryViewsProps {
@@ -51,6 +52,8 @@ interface SecondaryViewsProps {
   onSelectDevice: (deviceId: string) => void;
   onUpdateDevice: (deviceId: string, patch: Partial<DeviceInfo>) => void;
   editorSession: { project: EditorThemeProject; sourceThemeId?: string } | null;
+  editorSidebarMode?: SidebarMode;
+  onChangeEditorSidebarMode?: (mode: SidebarMode) => void;
   onEnterEditor: (project: EditorThemeProject, sourceThemeId?: string) => void;
   onExitEditor: () => void;
   onSaveEditorTheme: (theme: ThemeItem, applyNow: boolean) => void;
@@ -124,6 +127,8 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
   onSelectDevice,
   onUpdateDevice,
   editorSession,
+  editorSidebarMode,
+  onChangeEditorSidebarMode,
   onEnterEditor,
   onExitEditor,
   onSaveEditorTheme,
@@ -355,6 +360,8 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
           onStartTempPreview={onStartTempPreview}
           onExitEditor={onExitEditor}
           onNotify={onNotify}
+          sidebarMode={editorSidebarMode}
+          onChangeSidebarMode={onChangeEditorSidebarMode}
         />
       );
     }

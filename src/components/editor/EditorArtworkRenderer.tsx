@@ -25,7 +25,9 @@ import {
   ClockElement,
   DateElement,
   EditorElement,
+  EditorElementBase,
   EditorThemeProject,
+  ImageFeatherMode,
   MotionElement,
   PluginElement,
   ShapeElement,
@@ -137,7 +139,78 @@ function getDateText(e: DateElement, live: boolean, now: Date): string {
   return formats[e.fmt || 0] ?? formats[0];
 }
 
-function getTextEffectStyle(el: { fx?: string; color: string; g1?: string; g2?: string }): React.CSSProperties {
+function shadowToRgba(color: string, alphaPct = 55): string {
+  const a = Math.max(0, Math.min(1, alphaPct / 100));
+  const clean = color.trim().replace('#', '');
+  if (/^[0-9a-fA-F]{6}$/.test(clean)) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`;
+  }
+  if (/^[0-9a-fA-F]{3}$/.test(clean)) {
+    const r = parseInt(clean[0] + clean[0], 16);
+    const g = parseInt(clean[1] + clean[1], 16);
+    const b = parseInt(clean[2] + clean[2], 16);
+    return `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`;
+  }
+  return color;
+}
+
+function buildBoxShadowCss(shadow?: EditorElementBase['shadow']): string | undefined {
+  if (!shadow) return undefined;
+  if (shadow.blur <= 0 && shadow.x === 0 && shadow.y === 0) return undefined;
+  const rgba = shadowToRgba(shadow.color || '#000000', shadow.alpha ?? 55);
+  return `${shadow.x}cqmin ${shadow.y}cqmin ${shadow.blur}cqmin ${rgba}`;
+}
+
+function buildDropShadowCss(shadow?: EditorElementBase['shadow']): string | undefined {
+  if (!shadow) return undefined;
+  if (shadow.blur <= 0 && shadow.x === 0 && shadow.y === 0) return undefined;
+  const rgba = shadowToRgba(shadow.color || '#000000', shadow.alpha ?? 55);
+  return `drop-shadow(${shadow.x}cqmin ${shadow.y}cqmin ${(shadow.blur * 0.6).toFixed(2)}cqmin ${rgba})`;
+}
+
+function buildFeatherStyle(feather?: { mode: ImageFeatherMode; strength: number }): React.CSSProperties {
+  const fStrength = feather?.strength ?? 0;
+  if (!feather || fStrength <= 0) return {};
+  const s = Math.max(1, Math.min(60, fStrength));
+  const mode = feather.mode || 'all';
+  if (mode === 'all') {
+    const hGrad = `linear-gradient(to right, transparent 0%, black ${s}%, black ${100 - s}%, transparent 100%)`;
+    const vGrad = `linear-gradient(to bottom, transparent 0%, black ${s}%, black ${100 - s}%, transparent 100%)`;
+    return {
+      maskImage: `${hGrad}, ${vGrad}`,
+      WebkitMaskImage: `${hGrad}, ${vGrad}`,
+      maskComposite: 'intersect',
+      WebkitMaskComposite: 'source-in',
+    };
+  }
+  const grad =
+    mode === 'left'
+      ? `linear-gradient(to right, transparent 0%, black ${s}%, black 100%)`
+      : mode === 'right'
+        ? `linear-gradient(to left, transparent 0%, black ${s}%, black 100%)`
+        : mode === 'top'
+          ? `linear-gradient(to bottom, transparent 0%, black ${s}%, black 100%)`
+          : mode === 'bottom'
+            ? `linear-gradient(to top, transparent 0%, black ${s}%, black 100%)`
+            : mode === 'horizontal'
+              ? `linear-gradient(to right, transparent 0%, black ${s}%, black ${100 - s}%, transparent 100%)`
+              : `linear-gradient(to bottom, transparent 0%, black ${s}%, black ${100 - s}%, transparent 100%)`;
+  return {
+    maskImage: grad,
+    WebkitMaskImage: grad,
+  };
+}
+
+function getTextEffectStyle(el: {
+  fx?: string;
+  color: string;
+  g1?: string;
+  g2?: string;
+  gAngle?: number;
+}): React.CSSProperties {
   if (el.fx === 'glow') {
     return { textShadow: '0 0 0.2em currentColor, 0 0 0.55em currentColor' };
   }
@@ -152,7 +225,7 @@ function getTextEffectStyle(el: { fx?: string; color: string; g1?: string; g2?: 
   }
   if (el.fx === 'gradient') {
     return {
-      backgroundImage: `linear-gradient(120deg, ${el.g1 || '#60A5FA'}, ${el.g2 || '#F472B6'})`,
+      backgroundImage: `linear-gradient(${el.gAngle ?? 120}deg, ${el.g1 || '#60A5FA'}, ${el.g2 || '#F472B6'})`,
       WebkitBackgroundClip: 'text',
       WebkitTextFillColor: 'transparent',
     };
@@ -310,6 +383,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
   const sh = el.sh || 'rect';
   const c = el.color;
   const bw = el.bw || 0.8;
+  const dropFilter = buildDropShadowCss(el.shadow);
 
   if (sh === 'dash') {
     return (
@@ -318,6 +392,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
         style={{
           background: `linear-gradient(90deg, ${c} 62%, transparent 62%)`,
           backgroundSize: '5% 100%',
+          filter: dropFilter,
         }}
       />
     );
@@ -331,6 +406,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
           backgroundSize: `${(el.h * 2.2).toFixed(2)}cqh 100%`,
           backgroundRepeat: 'repeat-x',
           backgroundPosition: 'center',
+          filter: dropFilter,
         }}
       />
     );
@@ -341,6 +417,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
         className="h-full w-full"
         style={{
           background: `linear-gradient(to bottom, ${c} 0 32%, transparent 32% 68%, ${c} 68% 100%)`,
+          filter: dropFilter,
         }}
       />
     );
@@ -349,7 +426,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
     return (
       <div
         className="box-border h-full w-full rounded-full"
-        style={{ border: `${bw}cqmin solid ${c}` }}
+        style={{ border: `${bw}cqmin solid ${c}`, filter: dropFilter }}
       />
     );
   }
@@ -357,7 +434,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
     const a = `${(bw * 9).toFixed(2)}cqmin`;
     const b = `${bw}cqmin solid ${c}`;
     return (
-      <div className="relative h-full w-full">
+      <div className="relative h-full w-full" style={{ filter: dropFilter }}>
         <i className="absolute left-0 top-0" style={{ width: a, height: a, borderLeft: b, borderTop: b }} />
         <i className="absolute right-0 top-0" style={{ width: a, height: a, borderRight: b, borderTop: b }} />
         <i className="absolute left-0 bottom-0" style={{ width: a, height: a, borderLeft: b, borderBottom: b }} />
@@ -368,7 +445,7 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
   if (sh === 'dotline') {
     const d = `${(bw * 3.4).toFixed(2)}cqmin`;
     return (
-      <div className="flex h-full w-full items-center" style={{ gap: '1.4cqmin' }}>
+      <div className="flex h-full w-full items-center" style={{ gap: '1.4cqmin', filter: dropFilter }}>
         <i className="h-full flex-1" style={{ background: c }} />
         <i className="shrink-0 rounded-full" style={{ width: d, height: d, background: c }} />
         <i className="h-full flex-1" style={{ background: c }} />
@@ -377,15 +454,31 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
   }
 
   const strokeBorder = el.bw && el.bw > 0 ? `${el.bw}cqmin solid ${el.strokeColor || '#ffffff'}` : undefined;
+  const isGrad = el.fillMode === 'gradient';
+  const fillStyle: React.CSSProperties = isGrad
+    ? {
+        backgroundImage: `linear-gradient(${el.gradAngle ?? 135}deg, ${c}, ${el.color2 || '#38BDF8'})`,
+      }
+    : { backgroundColor: c };
+  const backdropStyle: React.CSSProperties =
+    el.backdropBlur && el.backdropBlur > 0
+      ? {
+          backdropFilter: `blur(${el.backdropBlur}px)`,
+          WebkitBackdropFilter: `blur(${el.backdropBlur}px)`,
+        }
+      : {};
+  const boxShadow = buildBoxShadowCss(el.shadow);
 
   if (sh === 'circle') {
     return (
       <div
         className="box-border h-full w-full"
         style={{
-          backgroundColor: c,
+          ...fillStyle,
+          ...backdropStyle,
           borderRadius: '50%',
           border: strokeBorder,
+          boxShadow,
         }}
       />
     );
@@ -395,9 +488,11 @@ const ShapeNode: React.FC<{ el: ShapeElement }> = ({ el }) => {
     <div
       className="box-border h-full w-full"
       style={{
-        backgroundColor: c,
+        ...fillStyle,
+        ...backdropStyle,
         borderRadius: el.radius >= 50 ? '9999px' : `${el.radius}cqmin`,
         border: strokeBorder,
+        boxShadow,
       }}
     />
   );
@@ -523,6 +618,7 @@ const WidgetNode: React.FC<{ el: WidgetElement; tickPhase: number; now: Date }> 
   const boxStyle: React.CSSProperties = {
     backgroundColor: `rgba(15, 23, 42, ${bgAlpha})`,
     borderColor: `${accent}55`,
+    boxShadow: buildBoxShadowCss(el.shadow),
   };
 
   if (el.widgetType === 'progress') {
@@ -748,6 +844,7 @@ const PluginNode: React.FC<{ el: PluginElement; tickPhase: number }> = ({ el, ti
   const boxStyle: React.CSSProperties = {
     backgroundColor: `rgba(15, 23, 42, ${bgAlpha})`,
     borderColor: supported ? `${accent}66` : 'rgba(245, 158, 11, 0.7)',
+    boxShadow: buildBoxShadowCss(el.shadow),
   };
 
   if (!supported) {
@@ -988,7 +1085,12 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
   const bgTransform = `translate(${bg.tx || 0}%, ${bg.ty || 0}%) rotate(${bg.rot || 0}deg) scale(${(
     (bg.sc || 1) * (bg.blur ? 1.12 : 1)
   ).toFixed(4)})`;
-  const bgFilter = bg.blur ? `blur(${bg.blur}cqmin)` : undefined;
+  const bgFilters: string[] = [];
+  if (bg.blur) bgFilters.push(`blur(${bg.blur}cqmin)`);
+  if (bg.brightness != null && bg.brightness !== 100) bgFilters.push(`brightness(${bg.brightness}%)`);
+  if (bg.contrast != null && bg.contrast !== 100) bgFilters.push(`contrast(${bg.contrast}%)`);
+  if (bg.saturate != null && bg.saturate !== 100) bgFilters.push(`saturate(${bg.saturate}%)`);
+  const bgFilter = bgFilters.length > 0 ? bgFilters.join(' ') : undefined;
 
   return (
     <div
@@ -1286,7 +1388,32 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
           const cropX = el.cropX ?? 0;
           const cropY = el.cropY ?? 0;
           const hasCrop = cropScale !== 1 || cropX !== 0 || cropY !== 0;
+          const featherStyle = buildFeatherStyle(el.feather);
+          const hasFeather = (el.feather?.strength ?? 0) > 0;
+          const boxShadow = buildBoxShadowCss(el.shadow);
+          const dropShadow = buildDropShadowCss(el.shadow);
           const hasBox = el.w != null && el.h != null;
+          const radiusCss = el.radius ? `${el.radius}cqmin` : undefined;
+
+          const mediaInner = el.src ? (
+            <img
+              src={el.src}
+              alt={el.sourceMeta?.name || ''}
+              draggable={false}
+              className="block h-full w-full"
+              style={{
+                objectFit: el.fit || 'cover',
+                transform: hasCrop
+                  ? `translate(${cropX}%, ${cropY}%) scale(${cropScale})`
+                  : undefined,
+                transformOrigin: 'center center',
+              }}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center rounded-[12%] border border-dashed border-current text-[0.7em]">
+              ◆
+            </div>
+          );
 
           return (
             <div
@@ -1297,30 +1424,30 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
                 height: hasBox ? `${el.h}cqh` : `${el.size}cqmin`,
                 width: hasBox ? `${el.w}cqw` : `${(el.size * (el.ar || 1)).toFixed(3)}cqmin`,
                 maxWidth: 'none',
-                borderRadius: el.radius ? `${el.radius}cqmin` : undefined,
-                filter: filters.length > 0 ? filters.join(' ') : undefined,
-                overflow: 'hidden',
+                borderRadius: hasFeather ? undefined : radiusCss,
+                filter: hasFeather
+                  ? dropShadow
+                  : filters.length > 0
+                    ? filters.join(' ')
+                    : undefined,
+                boxShadow: hasFeather ? undefined : boxShadow,
+                overflow: hasFeather ? undefined : 'hidden',
               }}
               {...handlers}
             >
-              {el.src ? (
-                <img
-                  src={el.src}
-                  alt={el.sourceMeta?.name || ''}
-                  draggable={false}
-                  className="block h-full w-full"
+              {hasFeather ? (
+                <div
+                  className="h-full w-full overflow-hidden"
                   style={{
-                    objectFit: el.fit || 'cover',
-                    transform: hasCrop
-                      ? `translate(${cropX}%, ${cropY}%) scale(${cropScale})`
-                      : undefined,
-                    transformOrigin: 'center center',
+                    borderRadius: radiusCss,
+                    filter: filters.length > 0 ? filters.join(' ') : undefined,
+                    ...featherStyle,
                   }}
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-[12%] border border-dashed border-current text-[0.7em]">
-                  ◆
+                >
+                  {mediaInner}
                 </div>
+              ) : (
+                mediaInner
               )}
             </div>
           );
@@ -1329,6 +1456,68 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
         if (el.kind === 'video') {
           const hasBox = el.w != null && el.h != null;
           const videoFit = el.fit || 'cover';
+          const filters: string[] = [];
+          if (el.blur) filters.push(`blur(${el.blur}cqmin)`);
+          if (el.brightness != null && el.brightness !== 100) {
+            filters.push(`brightness(${el.brightness}%)`);
+          }
+          if (el.contrast != null && el.contrast !== 100) {
+            filters.push(`contrast(${el.contrast}%)`);
+          }
+          if (el.saturate != null && el.saturate !== 100) {
+            filters.push(`saturate(${el.saturate}%)`);
+          }
+          const cropScale = el.cropScale ?? 1;
+          const cropX = el.cropX ?? 0;
+          const cropY = el.cropY ?? 0;
+          const hasCrop = cropScale !== 1 || cropX !== 0 || cropY !== 0;
+          const featherStyle = buildFeatherStyle(el.feather);
+          const hasFeather = (el.feather?.strength ?? 0) > 0;
+          const boxShadow = buildBoxShadowCss(el.shadow);
+          const dropShadow = buildDropShadowCss(el.shadow);
+          const radiusCss = el.radius ? `${el.radius}cqmin` : undefined;
+
+          const videoInner = (
+            <>
+              {playMotion && el.src ? (
+                <video
+                  src={el.src}
+                  muted
+                  loop
+                  autoPlay
+                  playsInline
+                  className="pointer-events-none block h-full w-full"
+                  style={{
+                    objectFit: videoFit,
+                    transform: hasCrop
+                      ? `translate(${cropX}%, ${cropY}%) scale(${cropScale})`
+                      : undefined,
+                    transformOrigin: 'center center',
+                  }}
+                />
+              ) : (
+                <img
+                  src={el.poster || ''}
+                  alt=""
+                  draggable={false}
+                  className="block h-full w-full"
+                  style={{
+                    objectFit: videoFit,
+                    transform: hasCrop
+                      ? `translate(${cropX}%, ${cropY}%) scale(${cropScale})`
+                      : undefined,
+                    transformOrigin: 'center center',
+                  }}
+                />
+              )}
+              {interactive && !playMotion && (
+                <span className="pointer-events-none absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  ▶ 视频
+                </span>
+              )}
+            </>
+          );
+
           return (
             <div
               key={el.id}
@@ -1338,35 +1527,30 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
                 height: hasBox ? `${el.h}cqh` : `${el.size}cqmin`,
                 width: hasBox ? `${el.w}cqw` : `${(el.size * (el.ar || 1)).toFixed(3)}cqmin`,
                 maxWidth: 'none',
-                borderRadius: el.radius ? `${el.radius}cqmin` : undefined,
-                filter: el.blur ? `blur(${el.blur}cqmin)` : undefined,
-                overflow: 'hidden',
+                borderRadius: hasFeather ? undefined : radiusCss,
+                filter: hasFeather
+                  ? dropShadow
+                  : filters.length > 0
+                    ? filters.join(' ')
+                    : undefined,
+                boxShadow: hasFeather ? undefined : boxShadow,
+                overflow: hasFeather ? undefined : 'hidden',
               }}
               {...handlers}
             >
-              {playMotion && el.src ? (
-                <video
-                  src={el.src}
-                  muted
-                  loop
-                  autoPlay
-                  playsInline
-                  className="pointer-events-none block h-full w-full"
-                  style={{ objectFit: videoFit }}
-                />
+              {hasFeather ? (
+                <div
+                  className="relative h-full w-full overflow-hidden"
+                  style={{
+                    borderRadius: radiusCss,
+                    filter: filters.length > 0 ? filters.join(' ') : undefined,
+                    ...featherStyle,
+                  }}
+                >
+                  {videoInner}
+                </div>
               ) : (
-                <img
-                  src={el.poster || ''}
-                  alt=""
-                  draggable={false}
-                  className="block h-full w-full"
-                  style={{ objectFit: videoFit }}
-                />
-              )}
-              {interactive && !playMotion && (
-                <span className="pointer-events-none absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  ▶ 视频
-                </span>
+                videoInner
               )}
             </div>
           );

@@ -8,7 +8,6 @@ import {
   AlignVerticalSpaceAround,
   ArrowLeft,
   Check,
-  ChevronRight,
   Clock,
   Copy,
   Download,
@@ -23,6 +22,8 @@ import {
   MonitorPlay,
   MoreHorizontal,
   Palette,
+  PanelLeft,
+  PanelLeftOpen,
   Play,
   Plus,
   Puzzle,
@@ -38,32 +39,43 @@ import {
   Ungroup,
   Unlock,
   Upload,
+  Wand2,
   WifiOff,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import type { SidebarMode } from '../Sidebar';
 import { ContentCategory, DeviceInfo, ThemeItem } from '../../data/themes';
 import {
   EDITOR_DEVICE_SPECS,
   EDITOR_RAIL_TABS,
+  PLUGIN_CAPABILITY_REGISTRY,
+  WIDGET_CATALOG,
+  computeFit100BoxPct,
   computeImportMediaBox,
+  computeNaturalBoxPct,
   genEditorId,
   makeElement,
   readImageDimensions,
   readVideoDimensions,
+  reflowElementsForSize,
   specLabelFromSize,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
 import {
   BgConfig,
+  ClockElement,
   EditorElement,
   EditorRailTab,
   EditorThemeProject,
   ImageElement,
+  PluginElement,
+  ShapeElement,
   THEME_SCHEMA_VERSION,
   TextElement,
   VideoElement,
+  WidgetElement,
 } from '../../types/editor';
 import { CaptureModal } from './CaptureModal';
 import {
@@ -74,8 +86,23 @@ import {
   isElementHidden,
   resolveAnchorPercentages,
 } from './EditorArtworkRenderer';
+import { ContextMenuState, EditorContextMenu } from './EditorContextMenu';
 import { EditorInspector, InspectorAlignMode } from './EditorInspector';
 import { EditorLeftPanel } from './EditorLeftPanel';
+import {
+  CustomAssetPreset,
+  StyleClipboardPayload,
+  applyStyleToElement,
+  deleteCustomAsset,
+  extractStyleFromElement,
+  loadCustomAssets,
+  loadPersistedClipboard,
+  loadPersistedStyleClipboard,
+  saveCustomAsset,
+  savePersistedClipboard,
+  savePersistedStyleClipboard,
+} from '../../utils/editorStorage';
+import { extractPaletteFromBg, getFallbackPaletteFromBg } from '../../utils/paletteExtractor';
 
 interface ThemeEditorV2Props {
   initialProject: EditorThemeProject;
@@ -87,6 +114,8 @@ interface ThemeEditorV2Props {
   onStartTempPreview: (theme: ThemeItem) => void;
   onExitEditor: () => void;
   onNotify: (msg: string) => void;
+  sidebarMode?: SidebarMode;
+  onChangeSidebarMode?: (mode: SidebarMode) => void;
 }
 
 interface BoxRect {
@@ -96,6 +125,18 @@ interface BoxRect {
   height: number;
   cx: number;
   cy: number;
+  rot: number;
+  aabbTop: number;
+  aabbBottom: number;
+}
+
+interface SiblingBoxPct {
+  l: number;
+  cx: number;
+  r: number;
+  t: number;
+  cy: number;
+  b: number;
 }
 
 type DragSession =
@@ -107,8 +148,9 @@ type DragSession =
       canvasH: number;
       ids: string[];
       origins: Record<string, { x: number; y: number }>;
-      origBoxPct?: { l: number; cx: number; r: number; t: number; cy: number; b: number };
+      origBoxPct?: SiblingBoxPct;
       siblingTargets?: { v: number[]; h: number[] };
+      siblingBoxes?: SiblingBoxPct[];
       moved: boolean;
     }
   | {
@@ -124,12 +166,37 @@ type DragSession =
       moved: boolean;
     }
   | {
+      type: 'multi-resize';
+      handle: 'tl' | 'tr' | 'bl' | 'br';
+      startX: number;
+      startY: number;
+      canvasW: number;
+      canvasH: number;
+      origBox: BoxRect;
+      anchorPctX: number;
+      anchorPctY: number;
+      items: { origEl: EditorElement }[];
+      moved: boolean;
+    }
+  | {
       type: 'rotate';
       cx: number;
       cy: number;
       startAngle: number;
       elId: string;
       origRot: number;
+      moved: boolean;
+    }
+  | {
+      type: 'multi-rotate';
+      cx: number;
+      cy: number;
+      selLocalCx: number;
+      selLocalCy: number;
+      canvasW: number;
+      canvasH: number;
+      startAngle: number;
+      items: { origEl: EditorElement; elCxPx: number; elCyPx: number }[];
       moved: boolean;
     }
   | {
@@ -220,6 +287,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   onStartTempPreview,
   onExitEditor,
   onNotify,
+  sidebarMode = 'hidden',
+  onChangeSidebarMode,
 }) => {
   const [project, setProject] = useState<EditorThemeProject>(() => cloneProj(initialProject));
   const [layoutIndex, setLayoutIndex] = useState<number>(0);
@@ -248,16 +317,26 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
 
-  // Clipboard & Recent Local Imports
-  const [clipboard, setClipboard] = useState<EditorElement[]>([]);
-  const [styleClipboard, setStyleClipboard] = useState<Partial<EditorElement> | null>(null);
+  // Clipboard, Custom Assets, Palette & Recent Local Imports
+  const [clipboard, setClipboard] = useState<EditorElement[]>(() => loadPersistedClipboard());
+  const [styleClipboard, setStyleClipboard] = useState<StyleClipboardPayload | null>(() =>
+    loadPersistedStyleClipboard()
+  );
+  const [customAssets, setCustomAssets] = useState<CustomAssetPreset[]>(() => loadCustomAssets());
+  const [extractedPalette, setExtractedPalette] = useState<string[]>(() =>
+    getFallbackPaletteFromBg(initialProject.bg)
+  );
+  const [alignScope, setAlignScope] = useState<'selection' | 'canvas'>('selection');
   const [recentImports, setRecentImports] = useState<
     { id: string; name: string; kind: 'image' | 'video'; src: string; w: number; h: number }[]
   >([]);
 
-  // Measured boxes on canvas + Snap guidelines + Live rotation HUD
+  // Measured boxes on canvas + Snap guidelines + Equal-spacing guides + Live rotation HUD
   const [selBox, setSelBox] = useState<BoxRect | null>(null);
   const [snapGuides, setSnapGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const [gapGuides, setGapGuides] = useState<
+    { axis: 'h' | 'v'; from: number; to: number; crossPos: number; pxGap: number }[]
+  >([]);
   const [rotateHud, setRotateHud] = useState<{ deg: number; x: number; y: number } | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<{ left: number; top: number; width: number; height: number } | null>(
     null
@@ -270,6 +349,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   const [libraryPickerMode, setLibraryPickerMode] = useState<'el' | 'bg' | 'replace-el' | null>(null);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameInput, setRenameInput] = useState<string>('');
+  const [saveAssetModalOpen, setSaveAssetModalOpen] = useState<boolean>(false);
+  const [saveAssetName, setSaveAssetName] = useState<string>('');
   const [addLayoutOpen, setAddLayoutOpen] = useState<boolean>(false);
   const [customLayoutW, setCustomLayoutW] = useState<number>(1920);
   const [customLayoutH, setCustomLayoutH] = useState<number>(462);
@@ -283,21 +364,13 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     project: EditorThemeProject;
     savedAt: number;
   } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    target: 'element' | 'canvas' | 'layout';
-    layoutIdx?: number;
-  } | null>(null);
-  const [contextSubmenu, setContextSubmenu] = useState<'z' | 'align' | 'transform' | 'add' | null>(
-    null
-  );
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragSession | null>(null);
   const fileUploadRef = useRef<HTMLInputElement | null>(null);
-  const fileUploadModeRef = useRef<'el' | 'bg'>('el');
+  const fileUploadModeRef = useRef<'el' | 'bg' | 'replace-el'>('el');
   const jsonImportRef = useRef<HTMLInputElement | null>(null);
   const detachNotifiedRef = useRef<boolean>(false);
 
@@ -351,6 +424,35 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     }, 1500);
     return () => window.clearTimeout(t);
   }, [isDirty, project, draftStorageKey]);
+
+  // Sync persisted cross-theme clipboard & style clipboard across tabs/sessions
+  useEffect(() => {
+    const syncClipboard = () => {
+      setClipboard(loadPersistedClipboard());
+      setStyleClipboard(loadPersistedStyleClipboard());
+      setCustomAssets(loadCustomAssets());
+    };
+    window.addEventListener('storage', syncClipboard);
+    window.addEventListener('focus', syncClipboard);
+    return () => {
+      window.removeEventListener('storage', syncClipboard);
+      window.removeEventListener('focus', syncClipboard);
+    };
+  }, []);
+
+  // Extract recommended color palette whenever background changes
+  useEffect(() => {
+    let cancelled = false;
+    setExtractedPalette(getFallbackPaletteFromBg(project.bg));
+    void extractPaletteFromBg(project.bg).then((palette) => {
+      if (!cancelled && palette.length > 0) {
+        setExtractedPalette(palette);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.bg]);
 
   // Fit canvas zoom calculation on resize / layout change
   useEffect(() => {
@@ -454,6 +556,35 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       return;
     }
     const cRect = canvasEl.getBoundingClientRect();
+
+    if (selectedIds.length === 1) {
+      const id = selectedIds[0];
+      const node = canvasEl.querySelector(`[data-el-id="${id}"]`) as HTMLElement | null;
+      if (!node) {
+        setSelBox(null);
+        return;
+      }
+      const r = node.getBoundingClientRect();
+      const elObj = layoutElements.find((e) => e.id === id);
+      const rot = elObj?.rot || 0;
+      const cx = r.left + r.width / 2 - cRect.left;
+      const cy = r.top + r.height / 2 - cRect.top;
+      const width = Math.max(14, node.offsetWidth || r.width);
+      const height = Math.max(14, node.offsetHeight || r.height);
+      setSelBox({
+        left: cx - width / 2,
+        top: cy - height / 2,
+        width,
+        height,
+        cx,
+        cy,
+        rot,
+        aabbTop: r.top - cRect.top,
+        aabbBottom: r.bottom - cRect.top,
+      });
+      return;
+    }
+
     let minL = Infinity;
     let minT = Infinity;
     let maxR = -Infinity;
@@ -488,8 +619,11 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       height,
       cx: left + width / 2,
       cy: top + height / 2,
+      rot: 0,
+      aabbTop: top,
+      aabbBottom: top + height,
     });
-  }, [selectedIds]);
+  }, [layoutElements, selectedIds]);
 
   useEffect(() => {
     const sid = selectedIds.length === 1 ? selectedIds[0] : null;
@@ -591,15 +725,18 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     [checkVideoLimit, commitProject, layoutIndex, onNotify]
   );
 
-  // Import local image/video file into canvas or bg
+  // Import local image/video file into canvas, bg, or replace selected media layer
   const importMediaFile = useCallback(
-    async (file: File, mode: 'el' | 'bg') => {
+    async (file: File, mode: 'el' | 'bg' | 'replace-el') => {
       const isVideo = file.type.startsWith('video/');
       const isImage = file.type.startsWith('image/');
       if (!isVideo && !isImage) {
         onNotify('暂不支持该文件格式，请上传 PNG / JPG / GIF / WebP / MP4 / WebM');
         return;
       }
+
+      const replaceTarget =
+        mode === 'replace-el' && selectedElements.length === 1 ? selectedElements[0] : null;
 
       if (isVideo) {
         const url = URL.createObjectURL(file);
@@ -620,6 +757,31 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             };
             return draft;
           });
+        } else if (replaceTarget?.kind === 'video') {
+          const box = computeImportMediaBox(dims.w, dims.h, canvasPxW, canvasPxH);
+          mutateElementsInCurrentLayout((els) =>
+            els.map((el) =>
+              el.id === replaceTarget.id && el.kind === 'video'
+                ? ({
+                    ...el,
+                    src: url,
+                    w: box.w,
+                    h: box.h,
+                    ar: box.ar,
+                    size: box.size,
+                    fit: box.fit,
+                    dur: dims.dur,
+                    sourceMeta: {
+                      origin: 'local',
+                      name: file.name,
+                      naturalWidth: dims.w,
+                      naturalHeight: dims.h,
+                    },
+                  } as VideoElement)
+                : el
+            )
+          );
+          onNotify(`已替换本地视频「${file.name}」`);
         } else {
           const box = computeImportMediaBox(dims.w, dims.h, canvasPxW, canvasPxH);
           const vidEl = makeElement('video', {
@@ -670,6 +832,30 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           return draft;
         });
         onNotify(`已设置背景图「${file.name}」(${dims.w}×${dims.h})`);
+      } else if (replaceTarget?.kind === 'image') {
+        const box = computeImportMediaBox(dims.w, dims.h, canvasPxW, canvasPxH);
+        mutateElementsInCurrentLayout((els) =>
+          els.map((el) =>
+            el.id === replaceTarget.id && el.kind === 'image'
+              ? ({
+                  ...el,
+                  src: dataUrl,
+                  w: box.w,
+                  h: box.h,
+                  ar: box.ar,
+                  size: box.size,
+                  fit: box.fit,
+                  sourceMeta: {
+                    origin: 'local',
+                    name: file.name,
+                    naturalWidth: dims.w,
+                    naturalHeight: dims.h,
+                  },
+                } as ImageElement)
+              : el
+          )
+        );
+        onNotify(`已替换本地图片「${file.name}」(${dims.w}×${dims.h})`);
       } else {
         const box = computeImportMediaBox(dims.w, dims.h, canvasPxW, canvasPxH);
         const imgEl = makeElement('image', {
@@ -692,7 +878,16 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         );
       }
     },
-    [canvasPxH, canvasPxW, checkVideoLimit, commitProject, handleInsertElements, onNotify]
+    [
+      canvasPxH,
+      canvasPxW,
+      checkVideoLimit,
+      commitProject,
+      handleInsertElements,
+      mutateElementsInCurrentLayout,
+      onNotify,
+      selectedElements,
+    ]
   );
 
   // Layer operations
@@ -742,15 +937,36 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     (op: 'top' | 'up' | 'down' | 'bottom', targetId?: string) => {
       const ids = targetId ? [targetId] : selectedIds;
       if (ids.length === 0) return;
+      const idSet = new Set(ids);
       mutateElementsInCurrentLayout((els) => {
         const copy = [...els];
-        const idx = copy.findIndex((e) => e.id === ids[0]);
-        if (idx === -1) return els;
-        const [item] = copy.splice(idx, 1);
-        if (op === 'top') copy.push(item);
-        else if (op === 'bottom') copy.unshift(item);
-        else if (op === 'up') copy.splice(Math.min(copy.length, idx + 1), 0, item);
-        else copy.splice(Math.max(0, idx - 1), 0, item);
+        if (op === 'top') {
+          const rest = copy.filter((e) => !idSet.has(e.id));
+          const moved = copy.filter((e) => idSet.has(e.id));
+          return [...rest, ...moved];
+        }
+        if (op === 'bottom') {
+          const moved = copy.filter((e) => idSet.has(e.id));
+          const rest = copy.filter((e) => !idSet.has(e.id));
+          return [...moved, ...rest];
+        }
+        if (op === 'up') {
+          for (let i = copy.length - 2; i >= 0; i -= 1) {
+            if (idSet.has(copy[i].id) && !idSet.has(copy[i + 1].id)) {
+              const tmp = copy[i];
+              copy[i] = copy[i + 1];
+              copy[i + 1] = tmp;
+            }
+          }
+          return copy;
+        }
+        for (let i = 1; i < copy.length; i += 1) {
+          if (idSet.has(copy[i].id) && !idSet.has(copy[i - 1].id)) {
+            const tmp = copy[i];
+            copy[i] = copy[i - 1];
+            copy[i - 1] = tmp;
+          }
+        }
         return copy;
       });
     },
@@ -789,17 +1005,22 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
 
   const handleDeleteSelection = useCallback(() => {
     if (selectedIds.length === 0) return;
-    const idSet = new Set(selectedIds);
+    const deletableIds = selectedIds.filter((id) => !project.locks[id]);
+    if (deletableIds.length === 0) {
+      onNotify('选中图层已锁定，请先解锁后再删除');
+      return;
+    }
+    const delSet = new Set(deletableIds);
     mutateElementsInCurrentLayout((els, draft) => {
-      selectedIds.forEach((id) => {
+      deletableIds.forEach((id) => {
         delete draft.locks[id];
         delete draft.names[id];
       });
-      return els.filter((e) => !idSet.has(e.id));
+      return els.filter((e) => !delSet.has(e.id));
     });
-    setSelectedIds([]);
-    onNotify(`已删除 ${idSet.size} 个图层`);
-  }, [mutateElementsInCurrentLayout, onNotify, selectedIds]);
+    setSelectedIds((prev) => prev.filter((id) => !delSet.has(id)));
+    onNotify(`已删除 ${delSet.size} 个图层`);
+  }, [mutateElementsInCurrentLayout, onNotify, project.locks, selectedIds]);
 
   const handleGroupSelection = useCallback(() => {
     if (selectedIds.length < 2) return;
@@ -817,11 +1038,86 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     onNotify('已取消组合');
   }, [mutateElementsInCurrentLayout, onNotify, selectedIds]);
 
-  // Align & Even Distribution (supports edge/center + 9-point anchor snap)
+  // Align & Even Distribution (supports selection-relative alignment + canvas anchor snap)
   const handleAlignSelection = useCallback(
-    (mode: InspectorAlignMode) => {
+    (mode: InspectorAlignMode, explicitScope?: 'selection' | 'canvas') => {
       if (selectedIds.length === 0) return;
+      const scope = selectedIds.length > 1 ? explicitScope ?? alignScope : 'canvas';
       const idSet = new Set(selectedIds);
+
+      if (scope === 'selection' && selectedIds.length > 1 && canvasRef.current) {
+        const canvasEl = canvasRef.current;
+        const cRect = canvasEl.getBoundingClientRect();
+        const cw = Math.max(1, cRect.width);
+        const ch = Math.max(1, cRect.height);
+
+        const measured = new Map<
+          string,
+          { l: number; r: number; cx: number; t: number; b: number; cy: number }
+        >();
+        let unionL = Infinity;
+        let unionR = -Infinity;
+        let unionT = Infinity;
+        let unionB = -Infinity;
+
+        selectedIds.forEach((id) => {
+          const node = canvasEl.querySelector(`[data-el-id="${id}"]`) as HTMLElement | null;
+          if (!node) return;
+          const r = node.getBoundingClientRect();
+          const box = {
+            l: ((r.left - cRect.left) / cw) * 100,
+            r: ((r.right - cRect.left) / cw) * 100,
+            cx: ((r.left + r.width / 2 - cRect.left) / cw) * 100,
+            t: ((r.top - cRect.top) / ch) * 100,
+            b: ((r.bottom - cRect.top) / ch) * 100,
+            cy: ((r.top + r.height / 2 - cRect.top) / ch) * 100,
+          };
+          measured.set(id, box);
+          unionL = Math.min(unionL, box.l);
+          unionR = Math.max(unionR, box.r);
+          unionT = Math.min(unionT, box.t);
+          unionB = Math.max(unionB, box.b);
+        });
+
+        if (measured.size > 1) {
+          const unionCX = (unionL + unionR) / 2;
+          const unionCY = (unionT + unionB) / 2;
+
+          mutateElementsInCurrentLayout((els) =>
+            els.map((el) => {
+              if (!idSet.has(el.id) || project.locks[el.id]) return el;
+              const box = measured.get(el.id);
+              if (!box) return el;
+              let dxPct = 0;
+              let dyPct = 0;
+              if (mode === 'l' || mode === 'tl' || mode === 'ml' || mode === 'bl') {
+                dxPct = unionL - box.l;
+              } else if (mode === 'hc' || mode === 'tc' || mode === 'mc' || mode === 'bc' || mode === 'c') {
+                dxPct = unionCX - box.cx;
+              } else if (mode === 'r' || mode === 'tr' || mode === 'mr' || mode === 'br') {
+                dxPct = unionR - box.r;
+              }
+
+              if (mode === 't' || mode === 'tl' || mode === 'tc' || mode === 'tr') {
+                dyPct = unionT - box.t;
+              } else if (mode === 'vc' || mode === 'ml' || mode === 'mc' || mode === 'mr' || mode === 'c') {
+                dyPct = unionCY - box.cy;
+              } else if (mode === 'b' || mode === 'bl' || mode === 'bc' || mode === 'br') {
+                dyPct = unionB - box.b;
+              }
+
+              return {
+                ...el,
+                x: +(el.x + dxPct).toFixed(2),
+                y: +(el.y + dyPct).toFixed(2),
+              };
+            })
+          );
+          onNotify('已按选区边界互相对齐');
+          return;
+        }
+      }
+
       mutateElementsInCurrentLayout((els) =>
         els.map((el) => {
           if (!idSet.has(el.id) || project.locks[el.id]) return el;
@@ -856,8 +1152,11 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           return next;
         })
       );
+      if (selectedIds.length > 1) {
+        onNotify('已相对画布完成对齐');
+      }
     },
-    [mutateElementsInCurrentLayout, project.locks, selectedIds]
+    [alignScope, mutateElementsInCurrentLayout, onNotify, project.locks, selectedIds]
   );
 
   const handleDistributeSelection = useCallback(
@@ -867,6 +1166,49 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         return;
       }
       const selected = layoutElements.filter((e) => selectedIds.includes(e.id));
+      const canvasEl = canvasRef.current;
+
+      if (canvasEl) {
+        const cRect = canvasEl.getBoundingClientRect();
+        const cw = Math.max(1, cRect.width);
+        const ch = Math.max(1, cRect.height);
+        const measured = selected
+          .map((el) => {
+            const node = canvasEl.querySelector(`[data-el-id="${el.id}"]`) as HTMLElement | null;
+            if (!node) return null;
+            const r = node.getBoundingClientRect();
+            return {
+              id: el.id,
+              center:
+                axis === 'h'
+                  ? ((r.left + r.width / 2 - cRect.left) / cw) * 100
+                  : ((r.top + r.height / 2 - cRect.top) / ch) * 100,
+            };
+          })
+          .filter((item): item is { id: string; center: number } => item !== null);
+
+        if (measured.length >= 3) {
+          measured.sort((a, b) => a.center - b.center);
+          const first = measured[0].center;
+          const last = measured[measured.length - 1].center;
+          const step = (last - first) / (measured.length - 1);
+          const deltaMap = new Map(
+            measured.map((m, idx) => [m.id, first + step * idx - m.center])
+          );
+          mutateElementsInCurrentLayout((els) =>
+            els.map((el) => {
+              const delta = deltaMap.get(el.id);
+              if (delta === undefined || project.locks[el.id]) return el;
+              return axis === 'h'
+                ? { ...el, x: +(el.x + delta).toFixed(2) }
+                : { ...el, y: +(el.y + delta).toFixed(2) };
+            })
+          );
+          onNotify(axis === 'h' ? '已完成水平等距分布' : '已完成垂直等距分布');
+          return;
+        }
+      }
+
       const coords = selected.map((el) => {
         const fx = FX_ANCHOR[el.a[1] as 'l' | 'c' | 'r'] ?? 50;
         const fy = FY_ANCHOR[el.a[0] as 't' | 'm' | 'b'] ?? 50;
@@ -896,6 +1238,179 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       onNotify(axis === 'h' ? '已完成水平等距分布' : '已完成垂直等距分布');
     },
     [layoutElements, mutateElementsInCurrentLayout, onNotify, project.locks, selectedIds]
+  );
+
+  const handleCopyElements = useCallback(() => {
+    if (selectedElements.length === 0) return;
+    const cloned = structuredClone(selectedElements);
+    setClipboard(cloned);
+    const saved = savePersistedClipboard(cloned);
+    onNotify(
+      saved
+        ? `已复制 ${cloned.length} 个图层（支持跨主题粘贴）`
+        : `已复制 ${cloned.length} 个图层（内容较大，仅当前会话可用）`
+    );
+  }, [onNotify, selectedElements]);
+
+  const handlePasteElements = useCallback(() => {
+    const source = clipboard.length > 0 ? clipboard : loadPersistedClipboard();
+    if (source.length === 0) return;
+    const pasted = source.map((c) => ({
+      ...structuredClone(c),
+      x: +(c.x + 2).toFixed(2),
+      y: +(c.y + 3).toFixed(2),
+      g: undefined,
+    }));
+    handleInsertElements(pasted, `粘贴 (${pasted.length}项)`);
+  }, [clipboard, handleInsertElements]);
+
+  const handleCopyStyle = useCallback(() => {
+    const target = selectedElements.length === 1 ? selectedElements[0] : null;
+    if (!target) return;
+    const payload = extractStyleFromElement(target);
+    setStyleClipboard(payload);
+    savePersistedStyleClipboard(payload);
+    onNotify('已复制图层样式参数（支持跨主题粘贴）');
+  }, [onNotify, selectedElements]);
+
+  const handlePasteStyle = useCallback(() => {
+    const payload = styleClipboard ?? loadPersistedStyleClipboard();
+    if (!payload || selectedIds.length === 0) return;
+    const idSet = new Set(selectedIds);
+    mutateElementsInCurrentLayout((els) =>
+      els.map((el) =>
+        idSet.has(el.id) && !project.locks[el.id] ? applyStyleToElement(el, payload) : el
+      )
+    );
+    onNotify('已粘贴样式到选中图层');
+  }, [mutateElementsInCurrentLayout, onNotify, project.locks, selectedIds, styleClipboard]);
+
+  const handleBatchColor = useCallback(
+    (hex: string) => {
+      if (selectedIds.length === 0) return;
+      const idSet = new Set(selectedIds);
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) => {
+          if (!idSet.has(el.id) || project.locks[el.id]) return el;
+          if (el.kind === 'image' || el.kind === 'video') return el;
+          if (el.kind === 'widget' || el.kind === 'plugin') {
+            return { ...el, accentColor: hex } as EditorElement;
+          }
+          return { ...el, color: hex };
+        })
+      );
+    },
+    [mutateElementsInCurrentLayout, project.locks, selectedIds]
+  );
+
+  const handleBatchAlpha = useCallback(
+    (alpha: number) => {
+      if (selectedIds.length === 0) return;
+      const idSet = new Set(selectedIds);
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) =>
+          idSet.has(el.id) && !project.locks[el.id] ? { ...el, alpha } : el
+        )
+      );
+    },
+    [mutateElementsInCurrentLayout, project.locks, selectedIds]
+  );
+
+  const handleBatchFont = useCallback(
+    (font: string) => {
+      if (selectedIds.length === 0) return;
+      const idSet = new Set(selectedIds);
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) => {
+          if (!idSet.has(el.id) || project.locks[el.id]) return el;
+          if (
+            el.kind === 'text' ||
+            el.kind === 'date' ||
+            (el.kind === 'clock' && (el as ClockElement).style !== 'analog')
+          ) {
+            return { ...el, font };
+          }
+          return el;
+        })
+      );
+    },
+    [mutateElementsInCurrentLayout, project.locks, selectedIds]
+  );
+
+  const handleBatchFontSize = useCallback(
+    (sizeCqmin: number) => {
+      if (selectedIds.length === 0) return;
+      const idSet = new Set(selectedIds);
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) => {
+          if (!idSet.has(el.id) || project.locks[el.id]) return el;
+          if (
+            el.kind === 'text' ||
+            el.kind === 'date' ||
+            (el.kind === 'clock' && (el as ClockElement).style !== 'analog')
+          ) {
+            return { ...el, size: sizeCqmin };
+          }
+          return el;
+        })
+      );
+    },
+    [mutateElementsInCurrentLayout, project.locks, selectedIds]
+  );
+
+  const handleBatchRadius = useCallback(
+    (radius: number) => {
+      if (selectedIds.length === 0) return;
+      const idSet = new Set(selectedIds);
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) => {
+          if (!idSet.has(el.id) || project.locks[el.id]) return el;
+          if (
+            el.kind === 'image' ||
+            el.kind === 'video' ||
+            (el.kind === 'shape' && ((el as ShapeElement).sh || 'rect') === 'rect')
+          ) {
+            return { ...el, radius } as EditorElement;
+          }
+          return el;
+        })
+      );
+    },
+    [mutateElementsInCurrentLayout, project.locks, selectedIds]
+  );
+
+  const handleOpenSaveAssetModal = useCallback(() => {
+    if (selectedElements.length === 0) return;
+    const first = selectedElements[0];
+    const defaultName =
+      selectedElements.length === 1
+        ? project.names[first.id] ||
+          (first.kind === 'text' ? first.text.slice(0, 12) : `${first.kind} 预设`)
+        : `组合预设 (${selectedElements.length}项)`;
+    setSaveAssetName(defaultName);
+    setSaveAssetModalOpen(true);
+  }, [project.names, selectedElements]);
+
+  const handleConfirmSaveAsset = useCallback(() => {
+    if (selectedElements.length === 0) return;
+    const name = saveAssetName.trim() || '我的素材预设';
+    const res = saveCustomAsset(name, selectedElements);
+    setCustomAssets(res.list);
+    setSaveAssetModalOpen(false);
+    if (res.ok) {
+      onNotify(`已存为我的素材「${name}」，可在左侧「素材 → 我的」中复用`);
+    } else {
+      onNotify('本地存储空间不足，未能保存素材预设');
+    }
+  }, [onNotify, saveAssetName, selectedElements]);
+
+  const handleDeleteCustomAsset = useCallback(
+    (id: string) => {
+      const next = deleteCustomAsset(id);
+      setCustomAssets(next);
+      onNotify('已删除自定义素材预设');
+    },
+    [onNotify]
   );
 
   const handleBulkScale = useCallback(
@@ -934,6 +1449,189 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     [mutateElementsInCurrentLayout, project.locks, selectedIds]
   );
 
+  const handleFlipSelection = useCallback(
+    (axis: 'x' | 'y') => {
+      if (selectedIds.length === 0) return;
+      const idSet = new Set(selectedIds);
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) => {
+          if (!idSet.has(el.id) || project.locks[el.id]) return el;
+          return axis === 'x'
+            ? { ...el, sx: (el.sx ?? 1) * -1 }
+            : { ...el, sy: (el.sy ?? 1) * -1 };
+        })
+      );
+      onNotify(axis === 'x' ? '已水平翻转选中图层' : '已垂直翻转选中图层');
+    },
+    [mutateElementsInCurrentLayout, onNotify, project.locks, selectedIds]
+  );
+
+  const handleReorderElements = useCallback(
+    (orderedIdsBottomToTop: string[]) => {
+      mutateElementsInCurrentLayout((els) => {
+        const byId = new Map(els.map((el) => [el.id, el]));
+        const next: EditorElement[] = [];
+        const seen = new Set<string>();
+        orderedIdsBottomToTop.forEach((id) => {
+          const found = byId.get(id);
+          if (found && !seen.has(id)) {
+            next.push(found);
+            seen.add(id);
+          }
+        });
+        els.forEach((el) => {
+          if (!seen.has(el.id)) next.push(el);
+        });
+        return next;
+      });
+    },
+    [mutateElementsInCurrentLayout]
+  );
+
+  const handleCommitLayerName = useCallback(
+    (id: string, nextName: string) => {
+      const trimmed = nextName.trim();
+      commitProject((draft) => {
+        if (trimmed) draft.names[id] = trimmed;
+        else delete draft.names[id];
+        return draft;
+      });
+    },
+    [commitProject]
+  );
+
+  const handleSmartReflowLayout = useCallback(
+    (targetIdx: number = layoutIndex) => {
+      const targetLayout = project.layouts[targetIdx];
+      if (targetIdx <= 0 || !targetLayout) return;
+      const masterSize = project.layouts[0]?.size ?? [1920, 462];
+      const targetSize = targetLayout.size;
+      commitProject((draft) => {
+        const target = draft.layouts[targetIdx];
+        if (!target) return draft;
+        const sourceEls = cloneProj(draft).master.map((el) =>
+          target.vis?.[el.id] ? { ...el, hide: true } : el
+        );
+        target.follow = false;
+        target.elements = reflowElementsForSize(sourceEls, masterSize, targetSize);
+        delete target.vis;
+        return draft;
+      });
+      setLayoutIndex(targetIdx);
+      setSelectedIds([]);
+      onNotify(
+        `已按 ${targetLayout.label} (${targetSize[0]}×${targetSize[1]}) 智能重排，Ctrl+Z 可撤销`
+      );
+    },
+    [commitProject, layoutIndex, onNotify, project.layouts]
+  );
+
+  const handleApplyMediaSizeMode = useCallback(
+    async (mediaEl: ImageElement | VideoElement, mode: 'natural' | 'fit100') => {
+      let nw = mediaEl.sourceMeta?.naturalWidth || 0;
+      let nh = mediaEl.sourceMeta?.naturalHeight || 0;
+      if (!nw || !nh) {
+        if (mediaEl.kind === 'video') {
+          const d = await readVideoDimensions(mediaEl.src);
+          nw = d.w;
+          nh = d.h;
+        } else {
+          const d = await readImageDimensions(mediaEl.src);
+          nw = d.w;
+          nh = d.h;
+        }
+      }
+      const box =
+        mode === 'natural'
+          ? computeNaturalBoxPct(nw, nh, canvasPxW, canvasPxH)
+          : computeFit100BoxPct(nw, nh, canvasPxW, canvasPxH);
+
+      mutateElementsInCurrentLayout((els) =>
+        els.map((el) => {
+          if (el.id !== mediaEl.id) return el;
+          const nextSourceMeta = {
+            ...(el.kind === 'image' || el.kind === 'video' ? el.sourceMeta : {}),
+            naturalWidth: nw,
+            naturalHeight: nh,
+          };
+          if (mode === 'fit100') {
+            return {
+              ...el,
+              a: 'mc',
+              x: 0,
+              y: 0,
+              w: box.w,
+              h: box.h,
+              ar: box.ar,
+              size: box.size,
+              fit: 'contain',
+              sourceMeta: nextSourceMeta,
+            } as EditorElement;
+          }
+          return {
+            ...el,
+            w: box.w,
+            h: box.h,
+            ar: box.ar,
+            size: box.size,
+            sourceMeta: nextSourceMeta,
+          } as EditorElement;
+        })
+      );
+      onNotify(
+        mode === 'natural'
+          ? `已恢复原始像素比例 (${nw}×${nh})`
+          : `已 100% 比例适配居中 (${nw}×${nh})`
+      );
+    },
+    [canvasPxH, canvasPxW, mutateElementsInCurrentLayout, onNotify]
+  );
+
+  const handleResetWidgetOrPluginDefaultSize = useCallback(
+    (targetEl: EditorElement) => {
+      if (targetEl.kind === 'widget') {
+        const wEl = targetEl as WidgetElement;
+        const spec = WIDGET_CATALOG.find((item) => item.type === wEl.widgetType);
+        const defW = spec?.defaultW ?? 28;
+        const defH = spec?.defaultH ?? 36;
+        mutateElementsInCurrentLayout((els) =>
+          els.map((el) => (el.id === wEl.id ? { ...el, w: defW, h: defH } : el))
+        );
+        onNotify(`已恢复组件默认尺寸 (${defW}% × ${defH}%)`);
+      } else if (targetEl.kind === 'plugin') {
+        const pEl = targetEl as PluginElement;
+        const spec = PLUGIN_CAPABILITY_REGISTRY.find((item) => item.key === pEl.capabilityKey);
+        const defW = spec?.defaultW ?? 30;
+        const defH = spec?.defaultH ?? 36;
+        mutateElementsInCurrentLayout((els) =>
+          els.map((el) => (el.id === pEl.id ? { ...el, w: defW, h: defH } : el))
+        );
+        onNotify(`已恢复插件默认尺寸 (${defW}% × ${defH}%)`);
+      }
+    },
+    [mutateElementsInCurrentLayout, onNotify]
+  );
+
+  const handleQuickAddKind = useCallback(
+    (kind: 'text' | 'clock' | 'date' | 'shape' | 'widget') => {
+      if (kind === 'text') {
+        handleInsertElements([makeElement('text', { text: '新建文本' })], '文字');
+      } else if (kind === 'clock') {
+        handleInsertElements([makeElement('clock', { size: 32 })], '数字时钟');
+      } else if (kind === 'date') {
+        handleInsertElements([makeElement('date', { size: 7 })], '日期星期');
+      } else if (kind === 'shape') {
+        handleInsertElements([makeElement('shape', { w: 20, h: 20, radius: 12 })], '几何形状');
+      } else {
+        handleInsertElements(
+          [makeElement('widget', { widgetType: 'sysmon', w: 30, h: 52 })],
+          '硬件监控组件'
+        );
+      }
+    },
+    [handleInsertElements]
+  );
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -966,20 +1664,16 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       }
       if (meta && e.key.toLowerCase() === 'c' && selectedElements.length > 0) {
         e.preventDefault();
-        setClipboard(structuredClone(selectedElements));
-        onNotify(`已复制 ${selectedElements.length} 个图层`);
+        handleCopyElements();
         return;
       }
-      if (meta && e.key.toLowerCase() === 'v' && clipboard.length > 0) {
-        e.preventDefault();
-        const pasted = clipboard.map((c) => ({
-          ...structuredClone(c),
-          x: +(c.x + 2).toFixed(2),
-          y: +(c.y + 3).toFixed(2),
-          g: undefined,
-        }));
-        handleInsertElements(pasted, `粘贴 (${pasted.length}项)`);
-        return;
+      if (meta && e.key.toLowerCase() === 'v') {
+        const hasPersisted = clipboard.length > 0 || loadPersistedClipboard().length > 0;
+        if (hasPersisted) {
+          e.preventDefault();
+          handlePasteElements();
+          return;
+        }
       }
       if (meta && e.key.toLowerCase() === 'd' && selectedElements.length > 0) {
         e.preventDefault();
@@ -1050,17 +1744,17 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   }, [
     clipboard,
     editingTextId,
+    handleCopyElements,
     handleDeleteSelection,
     handleDuplicateSelection,
     handleGroupSelection,
-    handleInsertElements,
+    handlePasteElements,
     handleRedo,
     handleUndo,
     handleUngroupSelection,
     layoutElements,
     layoutIndex,
     mutateElementsInCurrentLayout,
-    onNotify,
     project,
     selectedElements,
     selectedIds,
@@ -1107,49 +1801,205 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       }
 
       if (drag.type === 'move') {
-        const dxPct = ((e.clientX - drag.startX) / drag.canvasW) * 100;
-        const dyPct = ((e.clientY - drag.startY) / drag.canvasH) * 100;
+        const rawClientDx = e.clientX - drag.startX;
+        const rawClientDy = e.clientY - drag.startY;
+        const lockH = e.shiftKey && Math.abs(rawClientDx) >= Math.abs(rawClientDy);
+        const lockV = e.shiftKey && Math.abs(rawClientDy) > Math.abs(rawClientDx);
+        const dxPct = lockV ? 0 : (rawClientDx / drag.canvasW) * 100;
+        const dyPct = lockH ? 0 : (rawClientDy / drag.canvasH) * 100;
         if (Math.abs(dxPct) > 0.1 || Math.abs(dyPct) > 0.1) drag.moved = true;
 
         let snapDx = 0;
         let snapDy = 0;
         const activeV: number[] = [];
         const activeH: number[] = [];
+        const nextGapGuides: {
+          axis: 'h' | 'v';
+          from: number;
+          to: number;
+          crossPos: number;
+          pxGap: number;
+        }[] = [];
 
-        if (!e.altKey && drag.ids.length === 1) {
+        if (!e.altKey) {
           if (drag.origBoxPct && drag.siblingTargets) {
             const box = drag.origBoxPct;
-            const curV = [box.l + dxPct, box.cx + dxPct, box.r + dxPct];
-            const curH = [box.t + dyPct, box.cy + dyPct, box.b + dyPct];
+            if (!lockV) {
+              const curV = [box.l + dxPct, box.cx + dxPct, box.r + dxPct];
+              let bestVDist = 1.15;
+              let bestVTgt: number | null = null;
+              for (const val of curV) {
+                for (const tgt of drag.siblingTargets.v) {
+                  const d = Math.abs(val - tgt);
+                  if (d < bestVDist) {
+                    bestVDist = d;
+                    snapDx = tgt - val;
+                    bestVTgt = tgt;
+                  }
+                }
+              }
+              if (bestVTgt !== null) activeV.push(bestVTgt);
+            }
 
-            let bestVDist = 1.15;
-            let bestVTgt: number | null = null;
-            for (const val of curV) {
-              for (const tgt of drag.siblingTargets.v) {
-                const d = Math.abs(val - tgt);
-                if (d < bestVDist) {
-                  bestVDist = d;
-                  snapDx = tgt - val;
-                  bestVTgt = tgt;
+            if (!lockH) {
+              const curH = [box.t + dyPct, box.cy + dyPct, box.b + dyPct];
+              let bestHDist = 1.15;
+              let bestHTgt: number | null = null;
+              for (const val of curH) {
+                for (const tgt of drag.siblingTargets.h) {
+                  const d = Math.abs(val - tgt);
+                  if (d < bestHDist) {
+                    bestHDist = d;
+                    snapDy = tgt - val;
+                    bestHTgt = tgt;
+                  }
+                }
+              }
+              if (bestHTgt !== null) activeH.push(bestHTgt);
+            }
+
+            // Equal Spacing (gap) detection against non-selected siblings
+            if (drag.siblingBoxes && drag.siblingBoxes.length > 0) {
+              const curBox = {
+                l: box.l + dxPct + snapDx,
+                r: box.r + dxPct + snapDx,
+                cx: box.cx + dxPct + snapDx,
+                t: box.t + dyPct + snapDy,
+                b: box.b + dyPct + snapDy,
+                cy: box.cy + dyPct + snapDy,
+              };
+
+              // Horizontal equal spacing
+              if (!lockV) {
+                const rowSibs = drag.siblingBoxes.filter(
+                  (s) => s.b >= curBox.t - 6 && s.t <= curBox.b + 6
+                );
+                const leftSibs = rowSibs
+                  .filter((s) => s.r <= curBox.l + 0.35)
+                  .sort((a, b) => b.r - a.r);
+                const rightSibs = rowSibs
+                  .filter((s) => s.l >= curBox.r - 0.35)
+                  .sort((a, b) => a.l - b.l);
+
+                let matchedH = false;
+                if (leftSibs.length > 0 && rightSibs.length > 0) {
+                  const ls = leftSibs[0];
+                  const rs = rightSibs[0];
+                  const gapL = curBox.l - ls.r;
+                  const gapR = rs.l - curBox.r;
+                  if (gapL >= 0.4 && gapR >= 0.4 && Math.abs(gapL - gapR) < 1.2) {
+                    const adjust = activeV.length === 0 ? (gapR - gapL) / 2 : 0;
+                    snapDx += adjust;
+                    const finalL = curBox.l + adjust;
+                    const finalR = curBox.r + adjust;
+                    const finalGap = finalL - ls.r;
+                    const pxGap = Math.round((finalGap / 100) * canvasPxW);
+                    const crossY = (Math.max(curBox.t, Math.min(ls.t, rs.t)) + Math.min(curBox.b, Math.max(ls.b, rs.b))) / 2;
+                    nextGapGuides.push(
+                      { axis: 'h', from: ls.r, to: finalL, crossPos: crossY, pxGap },
+                      { axis: 'h', from: finalR, to: rs.l, crossPos: crossY, pxGap }
+                    );
+                    matchedH = true;
+                  }
+                }
+                if (!matchedH && rowSibs.length >= 2) {
+                  const sortedRow = [...rowSibs].sort((a, b) => a.l - b.l);
+                  for (let i = 0; i < sortedRow.length - 1; i += 1) {
+                    const sA = sortedRow[i];
+                    const sB = sortedRow[i + 1];
+                    const gAB = sB.l - sA.r;
+                    if (gAB < 0.5) continue;
+                    const crossY = (sA.cy + sB.cy + curBox.cy) / 3;
+                    if (curBox.l >= sB.r - 0.35 && Math.abs(curBox.l - sB.r - gAB) < 1.15) {
+                      const adjust = activeV.length === 0 ? gAB - (curBox.l - sB.r) : 0;
+                      snapDx += adjust;
+                      const pxGap = Math.round((gAB / 100) * canvasPxW);
+                      nextGapGuides.push(
+                        { axis: 'h', from: sA.r, to: sB.l, crossPos: crossY, pxGap },
+                        { axis: 'h', from: sB.r, to: curBox.l + adjust, crossPos: crossY, pxGap }
+                      );
+                      break;
+                    }
+                    if (curBox.r <= sA.l + 0.35 && Math.abs(sA.l - curBox.r - gAB) < 1.15) {
+                      const adjust = activeV.length === 0 ? (sA.l - curBox.r) - gAB : 0;
+                      snapDx += adjust;
+                      const pxGap = Math.round((gAB / 100) * canvasPxW);
+                      nextGapGuides.push(
+                        { axis: 'h', from: curBox.r + adjust, to: sA.l, crossPos: crossY, pxGap },
+                        { axis: 'h', from: sA.r, to: sB.l, crossPos: crossY, pxGap }
+                      );
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Vertical equal spacing
+              if (!lockH) {
+                const colSibs = drag.siblingBoxes.filter(
+                  (s) => s.r >= curBox.l - 6 && s.l <= curBox.r + 6
+                );
+                const topSibs = colSibs
+                  .filter((s) => s.b <= curBox.t + 0.35)
+                  .sort((a, b) => b.b - a.b);
+                const botSibs = colSibs
+                  .filter((s) => s.t >= curBox.b - 0.35)
+                  .sort((a, b) => a.t - b.t);
+
+                let matchedV = false;
+                if (topSibs.length > 0 && botSibs.length > 0) {
+                  const ts = topSibs[0];
+                  const bs = botSibs[0];
+                  const gapT = curBox.t - ts.b;
+                  const gapB = bs.t - curBox.b;
+                  if (gapT >= 0.4 && gapB >= 0.4 && Math.abs(gapT - gapB) < 1.2) {
+                    const adjust = activeH.length === 0 ? (gapB - gapT) / 2 : 0;
+                    snapDy += adjust;
+                    const finalT = curBox.t + adjust;
+                    const finalB = curBox.b + adjust;
+                    const finalGap = finalT - ts.b;
+                    const pxGap = Math.round((finalGap / 100) * canvasPxH);
+                    const crossX = (Math.max(curBox.l, Math.min(ts.l, bs.l)) + Math.min(curBox.r, Math.max(ts.r, bs.r))) / 2;
+                    nextGapGuides.push(
+                      { axis: 'v', from: ts.b, to: finalT, crossPos: crossX, pxGap },
+                      { axis: 'v', from: finalB, to: bs.t, crossPos: crossX, pxGap }
+                    );
+                    matchedV = true;
+                  }
+                }
+                if (!matchedV && colSibs.length >= 2) {
+                  const sortedCol = [...colSibs].sort((a, b) => a.t - b.t);
+                  for (let i = 0; i < sortedCol.length - 1; i += 1) {
+                    const sA = sortedCol[i];
+                    const sB = sortedCol[i + 1];
+                    const gAB = sB.t - sA.b;
+                    if (gAB < 0.5) continue;
+                    const crossX = (sA.cx + sB.cx + curBox.cx) / 3;
+                    if (curBox.t >= sB.b - 0.35 && Math.abs(curBox.t - sB.b - gAB) < 1.15) {
+                      const adjust = activeH.length === 0 ? gAB - (curBox.t - sB.b) : 0;
+                      snapDy += adjust;
+                      const pxGap = Math.round((gAB / 100) * canvasPxH);
+                      nextGapGuides.push(
+                        { axis: 'v', from: sA.b, to: sB.t, crossPos: crossX, pxGap },
+                        { axis: 'v', from: sB.b, to: curBox.t + adjust, crossPos: crossX, pxGap }
+                      );
+                      break;
+                    }
+                    if (curBox.b <= sA.t + 0.35 && Math.abs(sA.t - curBox.b - gAB) < 1.15) {
+                      const adjust = activeH.length === 0 ? (sA.t - curBox.b) - gAB : 0;
+                      snapDy += adjust;
+                      const pxGap = Math.round((gAB / 100) * canvasPxH);
+                      nextGapGuides.push(
+                        { axis: 'v', from: curBox.b + adjust, to: sA.t, crossPos: crossX, pxGap },
+                        { axis: 'v', from: sA.b, to: sB.t, crossPos: crossX, pxGap }
+                      );
+                      break;
+                    }
+                  }
                 }
               }
             }
-            if (bestVTgt !== null) activeV.push(bestVTgt);
-
-            let bestHDist = 1.15;
-            let bestHTgt: number | null = null;
-            for (const val of curH) {
-              for (const tgt of drag.siblingTargets.h) {
-                const d = Math.abs(val - tgt);
-                if (d < bestHDist) {
-                  bestHDist = d;
-                  snapDy = tgt - val;
-                  bestHTgt = tgt;
-                }
-              }
-            }
-            if (bestHTgt !== null) activeH.push(bestHTgt);
-          } else {
+          } else if (drag.ids.length === 1) {
             const lead = layoutElements.find((el) => el.id === drag.ids[0]);
             const orig = drag.origins[drag.ids[0]];
             if (lead && orig) {
@@ -1158,11 +2008,11 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               const curX = fx + orig.x + dxPct;
               const curY = fy + orig.y + dyPct;
               [4, 50, 96].forEach((target) => {
-                if (Math.abs(curX - target) < 1.3) {
+                if (!lockV && Math.abs(curX - target) < 1.3) {
                   snapDx = target - curX;
                   activeV.push(target);
                 }
-                if (Math.abs(curY - target) < 1.3) {
+                if (!lockH && Math.abs(curY - target) < 1.3) {
                   snapDy = target - curY;
                   activeH.push(target);
                 }
@@ -1171,6 +2021,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           }
         }
         setSnapGuides({ v: activeV, h: activeH });
+        setGapGuides(nextGapGuides);
 
         const idSet = new Set(drag.ids);
         mutateElementsInCurrentLayout(
@@ -1377,6 +2228,46 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         return;
       }
 
+      if (drag.type === 'multi-resize') {
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        drag.moved = true;
+        const dw = drag.handle.includes('r') ? dx : -dx;
+        const dh = drag.handle.includes('b') ? dy : -dy;
+        const normW = dw / Math.max(24, drag.origBox.width);
+        const normH = dh / Math.max(24, drag.origBox.height);
+        const deltaNorm = Math.abs(normW) >= Math.abs(normH) ? normW : normH;
+        const factor = Math.max(0.2, Math.min(5, 1 + deltaNorm));
+
+        const itemMap = new Map(drag.items.map((it) => [it.origEl.id, it.origEl]));
+        mutateElementsInCurrentLayout(
+          (els) =>
+            els.map((el) => {
+              const orig = itemMap.get(el.id);
+              if (!orig) return el;
+              const [fx, fy] = resolveAnchorPercentages(orig.a);
+              const nextX = +(drag.anchorPctX + factor * (fx + orig.x - drag.anchorPctX) - fx).toFixed(2);
+              const nextY = +(drag.anchorPctY + factor * (fy + orig.y - drag.anchorPctY) - fy).toFixed(2);
+              const nextSize = +Math.max(2, Math.min(140, orig.size * factor)).toFixed(1);
+              const patched: EditorElement & { w?: number; h?: number } = {
+                ...el,
+                x: nextX,
+                y: nextY,
+                size: nextSize,
+              };
+              if ('w' in orig && typeof orig.w === 'number') {
+                patched.w = +Math.max(0.2, Math.min(1000, orig.w * factor)).toFixed(2);
+              }
+              if ('h' in orig && typeof orig.h === 'number') {
+                patched.h = +Math.max(0.2, Math.min(1000, orig.h * factor)).toFixed(2);
+              }
+              return patched as EditorElement;
+            }),
+          false
+        );
+        return;
+      }
+
       if (drag.type === 'rotate') {
         drag.moved = true;
         const curAngle = (Math.atan2(e.clientY - drag.cy, e.clientX - drag.cx) * 180) / Math.PI;
@@ -1395,6 +2286,49 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           (els) => els.map((el) => (el.id === drag.elId ? { ...el, rot: finalDeg } : el)),
           false
         );
+        return;
+      }
+
+      if (drag.type === 'multi-rotate') {
+        drag.moved = true;
+        const curAngle = (Math.atan2(e.clientY - drag.cy, e.clientX - drag.cx) * 180) / Math.PI;
+        let deltaDeg = curAngle - drag.startAngle;
+        if (e.shiftKey) {
+          deltaDeg = Math.round(deltaDeg / 15) * 15;
+        } else {
+          const norm = ((deltaDeg % 360) + 360) % 360;
+          const snapTargets = [0, 90, 180, 270, 360];
+          const near = snapTargets.find((s) => Math.abs(norm - s) < 3.5);
+          if (near !== undefined) deltaDeg = near % 360;
+        }
+        const rad = (deltaDeg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const displayDeg = ((Math.round(deltaDeg) % 360) + 360) % 360;
+        setRotateHud({ deg: displayDeg, x: e.clientX + 14, y: e.clientY - 12 });
+
+        const itemMap = new Map(drag.items.map((it) => [it.origEl.id, it]));
+        mutateElementsInCurrentLayout(
+          (els) =>
+            els.map((el) => {
+              const info = itemMap.get(el.id);
+              if (!info) return el;
+              const vx = info.elCxPx - drag.selLocalCx;
+              const vy = info.elCyPx - drag.selLocalCy;
+              const newVx = vx * cos - vy * sin;
+              const newVy = vx * sin + vy * cos;
+              const dCxPx = newVx - vx;
+              const dCyPx = newVy - vy;
+              const nextRot = (((info.origEl.rot || 0) + deltaDeg) % 360 + 360) % 360;
+              return {
+                ...el,
+                x: +(info.origEl.x + (dCxPx / drag.canvasW) * 100).toFixed(2),
+                y: +(info.origEl.y + (dCyPx / drag.canvasH) * 100).toFixed(2),
+                rot: Math.round(nextRot),
+              };
+            }),
+          false
+        );
       }
     };
 
@@ -1403,6 +2337,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       if (!drag) return;
       dragRef.current = null;
       setSnapGuides({ v: [], h: [] });
+      setGapGuides([]);
       setRotateHud(null);
 
       if (drag.type === 'marquee') {
@@ -1439,13 +2374,17 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, [aspectLinked, commitProject, layoutElements, mutateElementsInCurrentLayout, project.locks]);
+  }, [aspectLinked, canvasPxH, canvasPxW, commitProject, layoutElements, mutateElementsInCurrentLayout, project.locks]);
 
   const handlePointerDownElement = useCallback(
     (e: React.PointerEvent, id: string) => {
       if (e.button === 2) {
-        const groupIds = resolveGroupIds(id);
-        setSelectedIds(groupIds);
+        e.stopPropagation();
+        setMoreMenuOpen(false);
+        setAdjBg(false);
+        if (!selectedIds.includes(id)) {
+          setSelectedIds(resolveGroupIds(id));
+        }
         setContextMenu({ x: e.clientX, y: e.clientY, target: 'element' });
         return;
       }
@@ -1478,36 +2417,57 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         if (nextSelection.includes(el.id)) origins[el.id] = { x: el.x, y: el.y };
       });
 
-      let origBoxPct: { l: number; cx: number; r: number; t: number; cy: number; b: number } | undefined;
-      let siblingTargets: { v: number[]; h: number[] } | undefined;
-      if (nextSelection.length === 1) {
-        const targetNode = canvasEl.querySelector(`[data-el-id="${nextSelection[0]}"]`) as HTMLElement | null;
-        if (targetNode) {
-          const tr = targetNode.getBoundingClientRect();
-          origBoxPct = {
-            l: ((tr.left - cRect.left) / cw) * 100,
-            cx: ((tr.left + tr.width / 2 - cRect.left) / cw) * 100,
-            r: ((tr.right - cRect.left) / cw) * 100,
-            t: ((tr.top - cRect.top) / ch) * 100,
-            cy: ((tr.top + tr.height / 2 - cRect.top) / ch) * 100,
-            b: ((tr.bottom - cRect.top) / ch) * 100,
-          };
-          const vSet = new Set<number>([4, 50, 96]);
-          const hSet = new Set<number>([4, 50, 96]);
-          canvasEl.querySelectorAll('[data-el-id]').forEach((node) => {
-            const nid = node.getAttribute('data-el-id');
-            if (!nid || nid === nextSelection[0]) return;
-            const r = node.getBoundingClientRect();
-            vSet.add(((r.left - cRect.left) / cw) * 100);
-            vSet.add(((r.left + r.width / 2 - cRect.left) / cw) * 100);
-            vSet.add(((r.right - cRect.left) / cw) * 100);
-            hSet.add(((r.top - cRect.top) / ch) * 100);
-            hSet.add(((r.top + r.height / 2 - cRect.top) / ch) * 100);
-            hSet.add(((r.bottom - cRect.top) / ch) * 100);
-          });
-          siblingTargets = { v: Array.from(vSet), h: Array.from(hSet) };
+      const selectedSet = new Set(nextSelection);
+      let minL = Infinity;
+      let maxR = -Infinity;
+      let minT = Infinity;
+      let maxB = -Infinity;
+      let measuredCount = 0;
+
+      const vSet = new Set<number>([4, 50, 96]);
+      const hSet = new Set<number>([4, 50, 96]);
+      const siblingBoxes: SiblingBoxPct[] = [];
+
+      canvasEl.querySelectorAll('[data-el-id]').forEach((node) => {
+        const nid = node.getAttribute('data-el-id');
+        if (!nid) return;
+        const r = node.getBoundingClientRect();
+        const boxPct: SiblingBoxPct = {
+          l: ((r.left - cRect.left) / cw) * 100,
+          cx: ((r.left + r.width / 2 - cRect.left) / cw) * 100,
+          r: ((r.right - cRect.left) / cw) * 100,
+          t: ((r.top - cRect.top) / ch) * 100,
+          cy: ((r.top + r.height / 2 - cRect.top) / ch) * 100,
+          b: ((r.bottom - cRect.top) / ch) * 100,
+        };
+        if (selectedSet.has(nid)) {
+          minL = Math.min(minL, boxPct.l);
+          maxR = Math.max(maxR, boxPct.r);
+          minT = Math.min(minT, boxPct.t);
+          maxB = Math.max(maxB, boxPct.b);
+          measuredCount += 1;
+        } else {
+          vSet.add(boxPct.l);
+          vSet.add(boxPct.cx);
+          vSet.add(boxPct.r);
+          hSet.add(boxPct.t);
+          hSet.add(boxPct.cy);
+          hSet.add(boxPct.b);
+          siblingBoxes.push(boxPct);
         }
-      }
+      });
+
+      const origBoxPct: SiblingBoxPct | undefined =
+        measuredCount > 0
+          ? {
+              l: minL,
+              r: maxR,
+              cx: (minL + maxR) / 2,
+              t: minT,
+              b: maxB,
+              cy: (minT + maxB) / 2,
+            }
+          : undefined;
 
       dragRef.current = {
         type: 'move',
@@ -1518,7 +2478,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         ids: nextSelection,
         origins,
         origBoxPct,
-        siblingTargets,
+        siblingTargets: { v: Array.from(vSet), h: Array.from(hSet) },
+        siblingBoxes,
         moved: false,
       };
     },
@@ -1657,6 +2618,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
 
   const singleSelected = selectedElements.length === 1 ? selectedElements[0] : null;
   const singleSelectedLocked = singleSelected ? Boolean(project.locks[singleSelected.id]) : false;
+  const anySelectedLocked = selectedIds.some((id) => Boolean(project.locks[id]));
 
   return (
     <div
@@ -1713,18 +2675,55 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
 
       {/* ==================== ZONE A: TOP TOOLBAR (56px) ==================== */}
       <header className="relative z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-[#E6E4F2] bg-white/92 px-3 backdrop-blur-xl shadow-[0_2px_12px_rgba(30,20,80,0.04)]">
-        {/* Left: Return, Title, Category, Dirty Status */}
+        {/* Left: Sidebar Mode Switcher, Return, Title, Category, Dirty Status */}
         <div className="flex min-w-0 items-center gap-2">
+          {onChangeSidebarMode && (
+            <div
+              role="group"
+              aria-label="主导航栏显示方式"
+              className="hidden lg:flex h-8 shrink-0 items-center gap-0.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-0.5"
+            >
+              {(
+                [
+                  { id: 'hidden', title: '隐藏最左侧导航栏', icon: EyeOff },
+                  { id: 'icons', title: '最左侧导航栏仅显示图标', icon: PanelLeft },
+                  { id: 'full', title: '展开完整最左侧导航栏', icon: PanelLeftOpen },
+                ] as const
+              ).map((opt) => {
+                const Icon = opt.icon;
+                const active = sidebarMode === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => onChangeSidebarMode(opt.id)}
+                    title={opt.title}
+                    aria-label={opt.title}
+                    aria-pressed={active}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] ${
+                      active
+                        ? 'bg-white text-[#5E45F8] shadow-xs'
+                        : 'text-[#6B6880] hover:text-[#1A172B]'
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => {
               if (isDirty) setExitConfirmOpen(true);
               else onExitEditor();
             }}
-            className="flex h-8 items-center gap-1 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 text-[12px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8] whitespace-nowrap"
+            title="返回创作中心"
+            className="flex h-8 shrink-0 items-center gap-1 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 text-[12px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8] whitespace-nowrap"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span>返回创作中心</span>
+            <span>返回</span>
           </button>
 
           <input
@@ -1749,10 +2748,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               })
             }
             aria-label="主题分类"
-            className="hidden md:block rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2 py-1 text-[11.5px] font-semibold text-[#56526B] focus:border-[#5E45F8] focus:outline-none"
+            className="hidden md:block h-8 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2 text-[11.5px] font-semibold text-[#56526B] focus:border-[#5E45F8] focus:outline-none"
           >
-            <option value="主题">桌面主题</option>
-            <option value="动态时钟">动态时钟</option>
+            <option value="主题">主题</option>
+            <option value="动态时钟">时钟</option>
           </select>
 
           <span className="hidden xl:inline-flex items-center gap-1 rounded-lg bg-[#F5F4FA] px-2 py-0.5 text-[10.5px] font-medium text-[#6B6880] whitespace-nowrap">
@@ -1900,12 +2899,13 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             className="flex h-8 items-center gap-1.5 rounded-xl border border-[#D9D2FF] bg-[#EFEBFD] px-2.5 text-[12px] font-semibold text-[#5E45F8] hover:bg-[#E5DDFD] whitespace-nowrap"
           >
             <MonitorPlay className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">设备临时预览</span>
+            <span className="hidden sm:inline">设备预览</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleSave(false)}
+            title="仅保存主题到我的主题库"
             className="flex h-8 items-center gap-1 rounded-xl border border-[#E6E4F2] bg-white px-2.5 text-[12px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8] whitespace-nowrap"
           >
             <Save className="h-3.5 w-3.5" />
@@ -1915,10 +2915,11 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           <button
             type="button"
             onClick={() => handleSave(true)}
+            title="保存并应用到当前设备"
             className="flex h-8 items-center gap-1 rounded-xl bg-gradient-to-r from-[#6A52FF] to-[#563CEB] px-3 text-[12px] font-bold text-white shadow-[0_4px_14px_rgba(94,69,248,0.28)] hover:brightness-105 whitespace-nowrap"
           >
             <Check className="h-3.5 w-3.5" />
-            <span>保存并使用</span>
+            <span>应用</span>
           </button>
 
           <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -1978,6 +2979,133 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         </div>
       </header>
 
+      {/* Compact Responsive Secondary Toolbar Strip (<1024px) */}
+      <div className="flex lg:hidden shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-[#E6E4F2] bg-white/88 px-3 py-1.5 backdrop-blur-md studio-scroll">
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-0.5">
+            <button
+              type="button"
+              disabled={historyIdx <= 0}
+              onClick={handleUndo}
+              title="撤销 (Ctrl+Z)"
+              aria-label="撤销"
+              className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={historyIdx >= history.length - 1}
+              onClick={handleRedo}
+              title="重做 (Ctrl+Y)"
+              aria-label="重做"
+              className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <select
+            value={`${canvasPxW}x${canvasPxH}`}
+            onChange={(e) => {
+              const [w, h] = e.target.value.split('x').map(Number);
+              if (w && h) handleSwitchDeviceSpec([w, h]);
+            }}
+            aria-label="切换设备画布规格（移动端工具栏）"
+            className="rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2 py-1 text-[11px] font-semibold text-[#1A172B] focus:border-[#5E45F8] focus:outline-none"
+          >
+            {EDITOR_DEVICE_SPECS.map((s) => (
+              <option key={s.id} value={`${s.size[0]}x${s.size[1]}`}>
+                {s.label} · {s.size[0]}×{s.size[1]}
+              </option>
+            ))}
+            {!EDITOR_DEVICE_SPECS.some(
+              (s) => s.size[0] === canvasPxW && s.size[1] === canvasPxH
+            ) && (
+              <option value={`${canvasPxW}x${canvasPxH}`}>
+                自定义 · {canvasPxW}×{canvasPxH}
+              </option>
+            )}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-0.5">
+            <button
+              type="button"
+              onClick={() => setLiveTick((v) => !v)}
+              title="切换实时时间走时预览"
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${
+                liveTick ? 'bg-[#5E45F8] text-white' : 'text-[#6B6880] hover:bg-white'
+              }`}
+            >
+              <Clock className="h-3 w-3" />
+              <span>实时</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlayMotion((v) => !v)}
+              title="切换动态与视频预览"
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${
+                playMotion ? 'bg-[#5E45F8] text-white' : 'text-[#6B6880] hover:bg-white'
+              }`}
+            >
+              <Play className="h-3 w-3" />
+              <span>动态</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSafeZone((v) => !v)}
+              title="显示/隐藏 4% 安全边距线"
+              className={`rounded-lg p-1 ${
+                showSafeZone ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'text-[#6B6880] hover:bg-white'
+              }`}
+              aria-label="安全边距"
+            >
+              <Shield className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGridRulers((v) => !v)}
+              title="显示/隐藏标尺与参考网格"
+              className={`rounded-lg p-1 ${
+                showGridRulers ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'text-[#6B6880] hover:bg-white'
+              }`}
+              aria-label="标尺与网格"
+            >
+              <Ruler className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-0.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-1 py-0.5">
+            <button
+              type="button"
+              onClick={() => setZoomMode(Math.max(0.25, +(effectiveZoom - 0.1).toFixed(2)))}
+              aria-label="缩小画布"
+              className="rounded-lg p-1 text-[#6B6880] hover:bg-white hover:text-[#5E45F8]"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomMode('fit')}
+              title="恢复适应屏幕比例"
+              className="px-1 font-mono-tabular text-[11px] font-bold text-[#1A172B] hover:text-[#5E45F8] whitespace-nowrap"
+            >
+              {Math.round(effectiveZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomMode(Math.min(2, +(effectiveZoom + 0.1).toFixed(2)))}
+              aria-label="放大画布"
+              className="rounded-lg p-1 text-[#6B6880] hover:bg-white hover:text-[#5E45F8]"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ==================== MAIN 4 WORKSPACE REGIONS ==================== */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* ZONE B: Left 1st-Level Navigation Rail (64px) */}
@@ -2021,9 +3149,12 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             selectedIds={selectedIds}
             themes={themes}
             recentImports={recentImports}
+            customAssets={customAssets}
+            extractedPalette={extractedPalette}
             onClose={() => setLeftCollapsed(true)}
             onSwitchTab={(t) => setActiveRailTab(t)}
             onInsertElements={handleInsertElements}
+            onDeleteCustomAsset={handleDeleteCustomAsset}
             onApplyTemplateProject={(nextProj, asCopy, msg) => {
               commitProject((prev) => ({
                 ...nextProj,
@@ -2064,6 +3195,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                   : [id]
               );
             }}
+            onSelectLayers={(ids) => {
+              setAdjBg(false);
+              setSelectedIds(ids);
+            }}
             onSelectBgLayer={() => {
               setSelectedIds([]);
               setActiveRailTab('background');
@@ -2071,13 +3206,25 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             onToggleLock={handleToggleLock}
             onToggleHide={handleToggleHide}
             onReorderLayer={handleReorderLayer}
+            onReorderElements={handleReorderElements}
             onRenameLayer={(id) => {
               setRenameTargetId(id);
               setRenameInput(project.names[id] || '');
             }}
+            onCommitLayerName={handleCommitLayerName}
             onDuplicateSelection={handleDuplicateSelection}
             onDeleteSelection={handleDeleteSelection}
             onToggleBgAdj={() => setAdjBg((v) => !v)}
+            onContextMenuLayer={(e, ids) => {
+              setMoreMenuOpen(false);
+              setAdjBg(false);
+              const allAlreadySelected =
+                ids.length > 0 && ids.every((id) => selectedIds.includes(id));
+              if (!allAlreadySelected) {
+                setSelectedIds(ids);
+              }
+              setContextMenu({ x: e.clientX, y: e.clientY, target: 'element' });
+            }}
             onNotify={onNotify}
           />
         )}
@@ -2100,6 +3247,19 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             }}
             onContextMenu={(e) => {
               e.preventDefault();
+              setMoreMenuOpen(false);
+              const elNode = (e.target as HTMLElement | null)?.closest(
+                '[data-el-id]'
+              ) as HTMLElement | null;
+              const elId = elNode?.getAttribute('data-el-id');
+              if (elId) {
+                setAdjBg(false);
+                if (!selectedIds.includes(elId)) {
+                  setSelectedIds(resolveGroupIds(elId));
+                }
+                setContextMenu({ x: e.clientX, y: e.clientY, target: 'element' });
+                return;
+              }
               setContextMenu({ x: e.clientX, y: e.clientY, target: 'canvas' });
             }}
             onDragOver={(e) => {
@@ -2228,9 +3388,169 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                     style={{ top: `${pos}%` }}
                   />
                 ))}
+
+                {/* Equal-Spacing Gap Indicators */}
+                {gapGuides.map((g, idx) => {
+                  const len = Math.max(0.2, g.to - g.from);
+                  return g.axis === 'h' ? (
+                    <div
+                      key={`gh-${idx}`}
+                      className="pointer-events-none absolute flex items-center justify-center"
+                      style={{
+                        left: `${g.from}%`,
+                        width: `${len}%`,
+                        top: `${g.crossPos}%`,
+                        transform: 'translateY(-50%)',
+                      }}
+                    >
+                      <div className="relative h-px w-full bg-[#EC4899] shadow-[0_0_4px_#EC4899]">
+                        <span className="absolute -top-1 left-0 h-2.5 w-px bg-[#EC4899]" />
+                        <span className="absolute -top-1 right-0 h-2.5 w-px bg-[#EC4899]" />
+                      </div>
+                      <span className="absolute -top-4 rounded bg-[#EC4899] px-1 py-0 font-mono-tabular text-[9px] font-bold text-white shadow-xs whitespace-nowrap">
+                        {g.pxGap}px
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      key={`gv-${idx}`}
+                      className="pointer-events-none absolute flex items-center justify-center"
+                      style={{
+                        top: `${g.from}%`,
+                        height: `${len}%`,
+                        left: `${g.crossPos}%`,
+                        transform: 'translateX(-50%)',
+                      }}
+                    >
+                      <div className="relative h-full w-px bg-[#EC4899] shadow-[0_0_4px_#EC4899]">
+                        <span className="absolute -left-1 top-0 h-px w-2.5 bg-[#EC4899]" />
+                        <span className="absolute -left-1 bottom-0 h-px w-2.5 bg-[#EC4899]" />
+                      </div>
+                      <span className="absolute left-2 rounded bg-[#EC4899] px-1 py-0 font-mono-tabular text-[9px] font-bold text-white shadow-xs whitespace-nowrap">
+                        {g.pxGap}px
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Selection Transform Overlay (Rendered above canvas at exact measured bounds) */}
+              {/* Unrotated Floating Quick Actions Toolbar (Auto-flips below when near top edge) */}
+              {selBox && !editingTextId && (
+                <div
+                  className="pointer-events-auto absolute z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[#E6E4F2] bg-white/95 px-1.5 py-0.5 shadow-[0_8px_24px_rgba(24,10,68,0.16)] backdrop-blur-md"
+                  style={{
+                    left: `${selBox.cx}px`,
+                    top: selBox.aabbTop < 48 ? `${selBox.aabbBottom + 10}px` : `${selBox.aabbTop - 38}px`,
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={handleDuplicateSelection}
+                    title="复制副本 (Ctrl+D)"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  {selectedIds.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleGroupSelection}
+                        title="成组 (Ctrl+G)"
+                        className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                      >
+                        <Group className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="mx-0.5 h-3.5 w-px bg-[#E6E4F2]" />
+                      <button
+                        type="button"
+                        onClick={() => handleAlignSelection('l')}
+                        title={alignScope === 'selection' ? '左对齐（对齐选区）' : '左对齐（对齐画布）'}
+                        className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                      >
+                        <AlignStartVertical className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAlignSelection('hc')}
+                        title={alignScope === 'selection' ? '水平居中（对齐选区）' : '水平居中（对齐画布）'}
+                        className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                      >
+                        <AlignCenterVertical className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAlignSelection('r')}
+                        title={alignScope === 'selection' ? '右对齐（对齐选区）' : '右对齐（对齐画布）'}
+                        className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                      >
+                        <AlignEndVertical className="h-3.5 w-3.5" />
+                      </button>
+                      {selectedIds.length >= 3 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleDistributeSelection('h')}
+                            title="水平等距分布"
+                            className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                          >
+                            <AlignHorizontalSpaceAround className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDistributeSelection('v')}
+                            title="垂直等距分布"
+                            className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                          >
+                            <AlignVerticalSpaceAround className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {selectedElements.some((el) => el.g) && (
+                    <button
+                      type="button"
+                      onClick={handleUngroupSelection}
+                      title="取消成组 (Ctrl+Shift+G)"
+                      className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                    >
+                      <Ungroup className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleLock()}
+                    title="锁定/解锁"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                  >
+                    {singleSelectedLocked || anySelectedLocked ? (
+                      <Unlock className="h-3.5 w-3.5 text-amber-600" />
+                    ) : (
+                      <Lock className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleHide()}
+                    title="隐藏图层"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                  >
+                    <EyeOff className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelection}
+                    title="删除 (Delete)"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Selection Transform Overlay (Follows element rotation when single-selected) */}
               {selBox && !editingTextId && (
                 <div
                   className="pointer-events-none absolute"
@@ -2239,121 +3559,14 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                     top: `${selBox.top}px`,
                     width: `${selBox.width}px`,
                     height: `${selBox.height}px`,
-                    outline: singleSelectedLocked
-                      ? '1.5px dashed #F59E0B'
-                      : '1.5px solid #5E45F8',
+                    transform: selBox.rot ? `rotate(${selBox.rot}deg)` : undefined,
+                    transformOrigin: 'center center',
+                    outline:
+                      singleSelectedLocked || anySelectedLocked
+                        ? '1.5px dashed #F59E0B'
+                        : '1.5px solid #5E45F8',
                   }}
                 >
-                  {/* Floating Quick Actions Toolbar */}
-                  <div
-                    className="pointer-events-auto absolute -top-9 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[#E6E4F2] bg-white/95 px-1.5 py-0.5 shadow-[0_8px_24px_rgba(24,10,68,0.16)] backdrop-blur-md"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      onClick={handleDuplicateSelection}
-                      title="复制副本 (Ctrl+D)"
-                      className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    {selectedIds.length > 1 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleGroupSelection}
-                          title="成组 (Ctrl+G)"
-                          className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                        >
-                          <Group className="h-3.5 w-3.5" />
-                        </button>
-                        <span className="mx-0.5 h-3.5 w-px bg-[#E6E4F2]" />
-                        <button
-                          type="button"
-                          onClick={() => handleAlignSelection('l')}
-                          title="左对齐"
-                          className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                        >
-                          <AlignStartVertical className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAlignSelection('hc')}
-                          title="水平居中"
-                          className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                        >
-                          <AlignCenterVertical className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAlignSelection('r')}
-                          title="右对齐"
-                          className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                        >
-                          <AlignEndVertical className="h-3.5 w-3.5" />
-                        </button>
-                        {selectedIds.length >= 3 && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleDistributeSelection('h')}
-                              title="水平等距分布"
-                              className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                            >
-                              <AlignHorizontalSpaceAround className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDistributeSelection('v')}
-                              title="垂直等距分布"
-                              className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                            >
-                              <AlignVerticalSpaceAround className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </>
-                    )}
-                    {selectedElements.some((el) => el.g) && (
-                      <button
-                        type="button"
-                        onClick={handleUngroupSelection}
-                        title="取消成组 (Ctrl+Shift+G)"
-                        className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        <Ungroup className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleLock()}
-                      title="锁定/解锁"
-                      className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                    >
-                      {singleSelectedLocked ? (
-                        <Unlock className="h-3.5 w-3.5 text-amber-600" />
-                      ) : (
-                        <Lock className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleHide()}
-                      title="隐藏图层"
-                      className="rounded-lg p-1 text-[#56526B] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                    >
-                      <EyeOff className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDeleteSelection}
-                      title="删除 (Delete)"
-                      className="rounded-lg p-1 text-[#56526B] hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
                   {/* Single-Element Resize Handles */}
                   {singleSelected && !singleSelectedLocked && (() => {
                     const isText = singleSelected.kind === 'text';
@@ -2412,27 +3625,105 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                     />
                   ))}
                   {singleSelected && !singleSelectedLocked && (
-                    <>
+                    <div
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        const cRect = canvasRef.current?.getBoundingClientRect();
+                        if (!cRect) return;
+                        const cx = cRect.left + selBox.cx;
+                        const cy = cRect.top + selBox.cy;
+                        dragRef.current = {
+                          type: 'rotate',
+                          cx,
+                          cy,
+                          startAngle: (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI,
+                          elId: singleSelected.id,
+                          origRot: singleSelected.rot || 0,
+                          moved: false,
+                        };
+                      }}
+                      title="拖拽旋转 (按住 Shift 每 15° 吸附)"
+                      className="pointer-events-auto absolute -bottom-7 left-1/2 flex h-5 w-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border border-[#5E45F8] bg-white text-[#5E45F8] shadow"
+                    >
+                      <RotateCw className="h-3 w-3" />
+                    </div>
+                  )}
 
-                      {/* Rotation Handle */}
+                  {/* Multi-Selection Proportional Corner Resize & Group Rotate Handles */}
+                  {selectedIds.length > 1 && !anySelectedLocked && (
+                    <>
+                      {(
+                        [
+                          { h: 'tl' as const, cls: 'z-10 -left-1.5 -top-1.5 cursor-nwse-resize' },
+                          { h: 'tr' as const, cls: 'z-10 -right-1.5 -top-1.5 cursor-nesw-resize' },
+                          { h: 'bl' as const, cls: 'z-10 -left-1.5 -bottom-1.5 cursor-nesw-resize' },
+                          { h: 'br' as const, cls: 'z-10 -right-1.5 -bottom-1.5 cursor-nwse-resize' },
+                        ] as const
+                      ).map((corner) => (
+                        <div
+                          key={corner.h}
+                          title="拖拽四角等比缩放整个选区"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            const cRect = canvasRef.current?.getBoundingClientRect();
+                            if (!cRect) return;
+                            const cw = Math.max(1, cRect.width);
+                            const ch = Math.max(1, cRect.height);
+                            const anchorPxX = corner.h.includes('l')
+                              ? selBox.left + selBox.width
+                              : selBox.left;
+                            const anchorPxY = corner.h.includes('t')
+                              ? selBox.top + selBox.height
+                              : selBox.top;
+                            dragRef.current = {
+                              type: 'multi-resize',
+                              handle: corner.h,
+                              startX: e.clientX,
+                              startY: e.clientY,
+                              canvasW: cw,
+                              canvasH: ch,
+                              origBox: selBox,
+                              anchorPctX: (anchorPxX / cw) * 100,
+                              anchorPctY: (anchorPxY / ch) * 100,
+                              items: selectedElements.map((el) => ({ origEl: structuredClone(el) })),
+                              moved: false,
+                            };
+                          }}
+                          className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-xs border border-[#5E45F8] bg-white shadow ${corner.cls}`}
+                        />
+                      ))}
+
                       <div
                         onPointerDown={(e) => {
                           e.stopPropagation();
-                          const cRect = canvasRef.current?.getBoundingClientRect();
-                          if (!cRect) return;
+                          const canvasEl = canvasRef.current;
+                          const cRect = canvasEl?.getBoundingClientRect();
+                          if (!canvasEl || !cRect) return;
+                          const cw = Math.max(1, cRect.width);
+                          const ch = Math.max(1, cRect.height);
                           const cx = cRect.left + selBox.cx;
                           const cy = cRect.top + selBox.cy;
+                          const items = selectedElements.map((el) => {
+                            const node = canvasEl.querySelector(`[data-el-id="${el.id}"]`) as HTMLElement | null;
+                            const r = node?.getBoundingClientRect();
+                            const elCxPx = r ? r.left + r.width / 2 - cRect.left : selBox.cx;
+                            const elCyPx = r ? r.top + r.height / 2 - cRect.top : selBox.cy;
+                            return { origEl: structuredClone(el), elCxPx, elCyPx };
+                          });
                           dragRef.current = {
-                            type: 'rotate',
+                            type: 'multi-rotate',
                             cx,
                             cy,
+                            selLocalCx: selBox.cx,
+                            selLocalCy: selBox.cy,
+                            canvasW: cw,
+                            canvasH: ch,
                             startAngle: (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI,
-                            elId: singleSelected.id,
-                            origRot: singleSelected.rot || 0,
+                            items,
                             moved: false,
                           };
                         }}
-                        title="拖拽旋转 (按住 Shift 每 15° 吸附)"
+                        title="拖拽绕选区中心整体旋转 (Shift 每 15° 吸附)"
                         className="pointer-events-auto absolute -bottom-7 left-1/2 flex h-5 w-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border border-[#5E45F8] bg-white text-[#5E45F8] shadow"
                       >
                         <RotateCw className="h-3 w-3" />
@@ -2529,6 +3820,15 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
 
             {layoutIndex > 0 && (
               <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleSmartReflowLayout(layoutIndex)}
+                  title="基于主布局自动按横/竖屏比例重排所有元素"
+                  className="flex items-center gap-1 rounded-lg border border-[#D9D2FF] bg-[#F5F2FF] px-2 py-1 text-[11px] font-semibold text-[#5E45F8] hover:bg-[#5E45F8] hover:text-white"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  <span>智能重排</span>
+                </button>
                 {currentLayout?.follow ? (
                   <button
                     type="button"
@@ -2598,6 +3898,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           selectedElements={selectedElements}
           adjBg={adjBg}
           aspectLinked={aspectLinked}
+          extractedPalette={extractedPalette}
+          alignScope={alignScope}
+          hasStyleClipboard={Boolean(styleClipboard)}
+          onChangeAlignScope={setAlignScope}
           onToggleAspectLink={() => setAspectLinked((v) => !v)}
           onToggleAdjBg={(on) => setAdjBg(on)}
           onMutateBg={(fn, msg) => {
@@ -2625,14 +3929,32 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             );
             if (msg) onNotify(msg);
           }}
+          onBatchColor={handleBatchColor}
+          onBatchAlpha={handleBatchAlpha}
+          onBatchFont={handleBatchFont}
+          onBatchFontSize={handleBatchFontSize}
+          onBatchRadius={handleBatchRadius}
+          onCopyStyle={handleCopyStyle}
+          onPasteStyle={handlePasteStyle}
+          onSaveAsAsset={handleOpenSaveAssetModal}
+          onReplaceBgImage={() => setLibraryPickerMode('bg')}
+          onUploadBgLocal={() => {
+            fileUploadModeRef.current = 'bg';
+            fileUploadRef.current?.click();
+          }}
           onReplaceImageForSelection={() => {
             if (singleSelected?.kind === 'video') {
-              fileUploadModeRef.current = 'el';
+              fileUploadModeRef.current = 'replace-el';
               fileUploadRef.current?.click();
             } else {
               setLibraryPickerMode('replace-el');
             }
           }}
+          onReplaceImageLocal={() => {
+            fileUploadModeRef.current = 'replace-el';
+            fileUploadRef.current?.click();
+          }}
+          onFlipSelection={handleFlipSelection}
           onAlignSelection={handleAlignSelection}
           onDistributeSelection={handleDistributeSelection}
           onBulkScale={handleBulkScale}
@@ -2689,618 +4011,151 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         </div>
       )}
 
-      {/* ==================== CONTEXT MENU (Reference Image 4) ==================== */}
+      {/* ==================== CONTEXT MENU ==================== */}
       {contextMenu && (
-        <div
-          style={{
-            left: `${Math.max(8, Math.min(window.innerWidth - 210, contextMenu.x))}px`,
-            top: `${Math.max(8, Math.min(window.innerHeight - 360, contextMenu.y))}px`,
+        <EditorContextMenu
+          menu={contextMenu}
+          project={project}
+          layoutIndex={layoutIndex}
+          layoutElements={layoutElements}
+          selectedIds={selectedIds}
+          selectedElements={selectedElements}
+          clipboardCount={clipboard.length}
+          hasStyleClipboard={Boolean(styleClipboard)}
+          playMotion={playMotion}
+          showSafeZone={showSafeZone}
+          showGridRulers={showGridRulers}
+          onClose={() => setContextMenu(null)}
+          onCopy={handleCopyElements}
+          onPaste={handlePasteElements}
+          onDuplicate={handleDuplicateSelection}
+          onDelete={handleDeleteSelection}
+          onReorderLayer={(op) => handleReorderLayer(op)}
+          onAlignSelection={handleAlignSelection}
+          onDistributeSelection={handleDistributeSelection}
+          onToggleLock={() => handleToggleLock()}
+          onToggleHide={() => handleToggleHide()}
+          onGroupSelection={handleGroupSelection}
+          onUngroupSelection={handleUngroupSelection}
+          onBulkScale={handleBulkScale}
+          onBulkRotate={handleBulkRotate}
+          onResetRotate={() => {
+            const idSet = new Set(selectedIds);
+            mutateElementsInCurrentLayout((els) =>
+              els.map((el) =>
+                idSet.has(el.id) && !project.locks[el.id] ? { ...el, rot: 0 } : el
+              )
+            );
+            onNotify('已重置旋转角度 (0°)');
           }}
-          className="fixed z-50 w-48 rounded-2xl border border-[#E6E4F2] bg-white/96 p-1.5 text-[12px] text-[#1A172B] shadow-[0_18px_46px_rgba(24,10,68,0.18)] backdrop-blur-xl"
-          onClick={(e) => e.stopPropagation()}
-          onMouseLeave={() => setContextSubmenu(null)}
-        >
-          {contextMenu.target === 'element' ? (() => {
-            const flipSubmenuLeft = contextMenu.x > window.innerWidth - 380;
-            const submenuSideCls = flipSubmenuLeft ? 'right-full mr-1.5' : 'left-full ml-1.5';
-            const allLocked =
-              selectedIds.length > 0 && selectedIds.every((id) => Boolean(project.locks[id]));
-            const anyHidden =
-              selectedElements.length > 0 &&
-              selectedElements.some((el) => isElementHidden(project, layoutIndex, el));
-            const anyGrouped = selectedElements.some((el) => Boolean(el.g));
-
-            return (
-              <>
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    setClipboard(structuredClone(selectedElements));
-                    setContextMenu(null);
-                    setContextSubmenu(null);
-                    onNotify(`已复制 ${selectedElements.length} 个图层`);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  <span>复制</span>
-                  <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+C</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={clipboard.length === 0}
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    if (clipboard.length === 0) return;
-                    const pasted = clipboard.map((c) => ({
-                      ...structuredClone(c),
-                      x: +(c.x + 2).toFixed(2),
-                      y: +(c.y + 3).toFixed(2),
-                      g: undefined,
-                    }));
-                    handleInsertElements(pasted, `粘贴 (${pasted.length}项)`);
-                    setContextMenu(null);
-                    setContextSubmenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <span>粘贴</span>
-                  <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+V</span>
-                </button>
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    handleDuplicateSelection();
-                    setContextMenu(null);
-                    setContextSubmenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  <span>创建副本</span>
-                  <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+D</span>
-                </button>
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    handleDeleteSelection();
-                    setContextMenu(null);
-                    setContextSubmenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-red-600 hover:bg-red-50"
-                >
-                  <span>删除</span>
-                  <span className="font-mono-tabular text-[10px] text-red-400">Del</span>
-                </button>
-
-                <div className="my-1 h-px bg-[#E6E4F2]" />
-
-                {/* Submenu: 层级 */}
-                <div
-                  className="relative"
-                  onMouseEnter={() => setContextSubmenu('z')}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setContextSubmenu((s) => (s === 'z' ? null : 'z'))}
-                    className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 ${
-                      contextSubmenu === 'z' ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'hover:bg-[#EFEBFD]'
-                    }`}
-                  >
-                    <span>层级</span>
-                    <ChevronRight className="h-3.5 w-3.5 text-[#8E89A6]" />
-                  </button>
-                  {contextSubmenu === 'z' && (
-                    <div
-                      className={`absolute top-0 ${submenuSideCls} w-36 rounded-2xl border border-[#E6E4F2] bg-white/96 p-1.5 shadow-[0_16px_40px_rgba(24,10,68,0.16)] backdrop-blur-xl`}
-                    >
-                      {[
-                        { op: 'top' as const, label: '置于顶层' },
-                        { op: 'up' as const, label: '上移一层' },
-                        { op: 'down' as const, label: '下移一层' },
-                        { op: 'bottom' as const, label: '置于底层' },
-                      ].map((item) => (
-                        <button
-                          key={item.op}
-                          type="button"
-                          onClick={() => {
-                            handleReorderLayer(item.op);
-                            setContextMenu(null);
-                            setContextSubmenu(null);
-                          }}
-                          className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Submenu: 对齐画布 */}
-                <div
-                  className="relative"
-                  onMouseEnter={() => setContextSubmenu('align')}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setContextSubmenu((s) => (s === 'align' ? null : 'align'))}
-                    className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 ${
-                      contextSubmenu === 'align' ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'hover:bg-[#EFEBFD]'
-                    }`}
-                  >
-                    <span>对齐画布</span>
-                    <ChevronRight className="h-3.5 w-3.5 text-[#8E89A6]" />
-                  </button>
-                  {contextSubmenu === 'align' && (
-                    <div
-                      className={`absolute top-0 ${submenuSideCls} w-36 rounded-2xl border border-[#E6E4F2] bg-white/96 p-1.5 shadow-[0_16px_40px_rgba(24,10,68,0.16)] backdrop-blur-xl`}
-                    >
-                      {[
-                        { mode: 'l' as const, label: '居左' },
-                        { mode: 'hc' as const, label: '水平居中' },
-                        { mode: 'r' as const, label: '居右' },
-                        { mode: 't' as const, label: '居上' },
-                        { mode: 'vc' as const, label: '垂直居中' },
-                        { mode: 'b' as const, label: '居下' },
-                        { mode: 'c' as const, label: '正中' },
-                      ].map((item) => (
-                        <button
-                          key={item.mode}
-                          type="button"
-                          onClick={() => {
-                            handleAlignSelection(item.mode);
-                            setContextMenu(null);
-                            setContextSubmenu(null);
-                          }}
-                          className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                      {selectedIds.length >= 3 && (
-                        <>
-                          <div className="my-1 h-px bg-[#E6E4F2]" />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleDistributeSelection('h');
-                              setContextMenu(null);
-                              setContextSubmenu(null);
-                            }}
-                            className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                          >
-                            水平等距分布
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleDistributeSelection('v');
-                              setContextMenu(null);
-                              setContextSubmenu(null);
-                            }}
-                            className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                          >
-                            垂直等距分布
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="my-1 h-px bg-[#E6E4F2]" />
-
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    handleToggleLock();
-                    setContextMenu(null);
-                    setContextSubmenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  <span>{allLocked ? '解锁' : '锁定'}</span>
-                </button>
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    handleToggleHide();
-                    setContextMenu(null);
-                    setContextSubmenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  <span>{anyHidden ? '显示' : '隐藏'}</span>
-                </button>
-
-                {selectedIds.length > 1 && (
-                  <button
-                    type="button"
-                    onMouseEnter={() => setContextSubmenu(null)}
-                    onClick={() => {
-                      handleGroupSelection();
-                      setContextMenu(null);
-                      setContextSubmenu(null);
-                    }}
-                    className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                  >
-                    <span>组合图层</span>
-                    <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+G</span>
-                  </button>
-                )}
-                {anyGrouped && (
-                  <button
-                    type="button"
-                    onMouseEnter={() => setContextSubmenu(null)}
-                    onClick={() => {
-                      handleUngroupSelection();
-                      setContextMenu(null);
-                      setContextSubmenu(null);
-                    }}
-                    className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                  >
-                    <span>取消组合</span>
-                    <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+Shift+G</span>
-                  </button>
-                )}
-
-                {/* Submenu: 变换 */}
-                <div
-                  className="relative"
-                  onMouseEnter={() => setContextSubmenu('transform')}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setContextSubmenu((s) => (s === 'transform' ? null : 'transform'))}
-                    className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 ${
-                      contextSubmenu === 'transform' ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'hover:bg-[#EFEBFD]'
-                    }`}
-                  >
-                    <span>变换</span>
-                    <ChevronRight className="h-3.5 w-3.5 text-[#8E89A6]" />
-                  </button>
-                  {contextSubmenu === 'transform' && (
-                    <div
-                      className={`absolute top-0 ${submenuSideCls} w-40 rounded-2xl border border-[#E6E4F2] bg-white/96 p-1.5 shadow-[0_16px_40px_rgba(24,10,68,0.16)] backdrop-blur-xl`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleBulkRotate(90);
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        顺时针旋转 90°
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleBulkRotate(-90);
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        逆时针旋转 90°
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const idSet = new Set(selectedIds);
-                          mutateElementsInCurrentLayout((els) =>
-                            els.map((el) =>
-                              idSet.has(el.id) && !project.locks[el.id] ? { ...el, rot: 0 } : el
-                            )
-                          );
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        重置旋转角度 (0°)
-                      </button>
-                      <div className="my-1 h-px bg-[#E6E4F2]" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleBulkScale(1.1);
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        等比放大 +10%
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleBulkScale(0.9);
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        等比缩小 -10%
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="my-1 h-px bg-[#E6E4F2]" />
-
-                {singleSelected && (
-                  <>
-                    <button
-                      type="button"
-                      onMouseEnter={() => setContextSubmenu(null)}
-                      onClick={() => {
-                        setStyleClipboard({
-                          color: singleSelected.color,
-                          alpha: singleSelected.alpha,
-                          weight: singleSelected.weight,
-                          font: singleSelected.font,
-                          ls: singleSelected.ls,
-                          fx: singleSelected.fx,
-                        });
-                        setContextMenu(null);
-                        setContextSubmenu(null);
-                        onNotify('已复制图层样式参数');
-                      }}
-                      className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                    >
-                      复制样式
-                    </button>
-                    {styleClipboard && (
-                      <button
-                        type="button"
-                        onMouseEnter={() => setContextSubmenu(null)}
-                        onClick={() => {
-                          const idSet = new Set(selectedIds);
-                          mutateElementsInCurrentLayout((els) =>
-                            els.map((el) =>
-                              idSet.has(el.id) && !project.locks[el.id]
-                                ? ({ ...el, ...styleClipboard } as EditorElement)
-                                : el
-                            )
-                          );
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                          onNotify('已粘贴样式到选中图层');
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        粘贴样式
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onMouseEnter={() => setContextSubmenu(null)}
-                      onClick={() => {
-                        const sameKindIds = layoutElements
-                          .filter(
-                            (el) =>
-                              el.kind === singleSelected.kind &&
-                              !isElementHidden(project, layoutIndex, el)
-                          )
-                          .map((el) => el.id);
-                        setSelectedIds(sameKindIds);
-                        setContextMenu(null);
-                        setContextSubmenu(null);
-                        onNotify(`已选中全部 ${sameKindIds.length} 个同类图层`);
-                      }}
-                      className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                    >
-                      选择同类型图层
-                    </button>
-                    <button
-                      type="button"
-                      onMouseEnter={() => setContextSubmenu(null)}
-                      onClick={() => {
-                        setRenameTargetId(singleSelected.id);
-                        setRenameInput(project.names[singleSelected.id] || '');
-                        setContextMenu(null);
-                        setContextSubmenu(null);
-                      }}
-                      className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                    >
-                      重命名...
-                    </button>
-                  </>
-                )}
-              </>
+          onFlipSelection={handleFlipSelection}
+          onCopyStyle={handleCopyStyle}
+          onPasteStyle={handlePasteStyle}
+          onSaveAsAsset={handleOpenSaveAssetModal}
+          onSelectSameKind={() => {
+            if (!singleSelected) return;
+            const sameKindIds = layoutElements
+              .filter(
+                (el) =>
+                  el.kind === singleSelected.kind &&
+                  !isElementHidden(project, layoutIndex, el)
+              )
+              .map((el) => el.id);
+            setSelectedIds(sameKindIds);
+            onNotify(`已选中全部 ${sameKindIds.length} 个同类图层`);
+          }}
+          onRenameLayer={(id) => {
+            setRenameTargetId(id);
+            setRenameInput(project.names[id] || '');
+          }}
+          onEditText={(id) => {
+            setEditingTextId(id);
+          }}
+          onMutateSingle={(fn, msg) => {
+            if (!singleSelected) return;
+            mutateElementsInCurrentLayout((els) =>
+              els.map((el) => (el.id === singleSelected.id ? fn(el) : el))
             );
-          })() : contextMenu.target === 'layout' && contextMenu.layoutIdx !== undefined ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  setLayoutIndex(contextMenu.layoutIdx!);
-                  setContextMenu(null);
-                }}
-                className="flex w-full rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-              >
-                切换到此尺寸画布
-              </button>
-              {contextMenu.layoutIdx > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const idx = contextMenu.layoutIdx!;
-                    commitProject((draft) => {
-                      const lay = draft.layouts[idx];
-                      if (lay) {
-                        lay.follow = !lay.follow;
-                        if (!lay.follow && !lay.elements) lay.elements = cloneProj(draft).master;
-                      }
-                      return draft;
-                    });
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  切换跟随 / 独立编辑
-                </button>
-              )}
-            </>
-          ) : (() => {
-            const flipSubmenuLeft = contextMenu.x > window.innerWidth - 360;
-            const submenuSideCls = flipSubmenuLeft ? 'right-full mr-1.5' : 'left-full ml-1.5';
-            return (
-              <>
-                <button
-                  type="button"
-                  disabled={clipboard.length === 0}
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    if (clipboard.length === 0) return;
-                    const pasted = clipboard.map((c) => ({
-                      ...structuredClone(c),
-                      x: +(c.x + 2).toFixed(2),
-                      y: +(c.y + 3).toFixed(2),
-                      g: undefined,
-                    }));
-                    handleInsertElements(pasted, '粘贴图层');
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <span>粘贴</span>
-                  <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+V</span>
-                </button>
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    setSelectedIds(
-                      layoutElements
-                        .filter((el) => !isElementHidden(project, layoutIndex, el))
-                        .map((el) => el.id)
-                    );
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  <span>全选可见图层</span>
-                  <span className="font-mono-tabular text-[10px] text-[#8E89A6]">Ctrl+A</span>
-                </button>
-
-                <div className="my-1 h-px bg-[#E6E4F2]" />
-
-                <div
-                  className="relative"
-                  onMouseEnter={() => setContextSubmenu('add')}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setContextSubmenu((s) => (s === 'add' ? null : 'add'))}
-                    className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 ${
-                      contextSubmenu === 'add' ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'hover:bg-[#EFEBFD]'
-                    }`}
-                  >
-                    <span>快速添加图层</span>
-                    <ChevronRight className="h-3.5 w-3.5 text-[#8E89A6]" />
-                  </button>
-                  {contextSubmenu === 'add' && (
-                    <div
-                      className={`absolute top-0 ${submenuSideCls} w-40 rounded-2xl border border-[#E6E4F2] bg-white/96 p-1.5 shadow-[0_16px_40px_rgba(24,10,68,0.16)] backdrop-blur-xl`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleInsertElements([makeElement('text', { text: '新建文本' })], '文字');
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        新建文本
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleInsertElements([makeElement('clock', { size: 32 })], '数字时钟');
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        数字时钟
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleInsertElements([makeElement('date', { size: 7 })], '日期星期');
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        日期星期
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleInsertElements(
-                            [makeElement('shape', { w: 20, h: 20, radius: 12 })],
-                            '几何形状'
-                          );
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        几何形状
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleInsertElements(
-                            [makeElement('widget', { widgetType: 'sysmon', w: 30, h: 52 })],
-                            '硬件监控组件'
-                          );
-                          setContextMenu(null);
-                          setContextSubmenu(null);
-                        }}
-                        className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                      >
-                        硬件监控组件
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    setAdjBg(true);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  进入背景直接调整
-                </button>
-                <button
-                  type="button"
-                  onMouseEnter={() => setContextSubmenu(null)}
-                  onClick={() => {
-                    setShowGridRulers((v) => !v);
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full rounded-xl px-2.5 py-1.5 text-left hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
-                >
-                  {showGridRulers ? '隐藏标尺与网格' : '显示标尺与网格'}
-                </button>
-              </>
+            if (msg) onNotify(msg);
+          }}
+          onReplaceImageLocal={() => {
+            fileUploadModeRef.current = 'replace-el';
+            fileUploadRef.current?.click();
+          }}
+          onReplaceImageLibrary={() => {
+            setLibraryPickerMode('replace-el');
+          }}
+          onApplyMediaNaturalSize={(el) => {
+            void handleApplyMediaSizeMode(el, 'natural');
+          }}
+          onApplyMediaFit100={(el) => {
+            void handleApplyMediaSizeMode(el, 'fit100');
+          }}
+          onApplyMotionFullBleed={() => {
+            if (!singleSelected) return;
+            mutateElementsInCurrentLayout((els) =>
+              els.map((el) =>
+                el.id === singleSelected.id
+                  ? { ...el, a: 'mc', x: 0, y: 0, w: 100, h: 100 }
+                  : el
+              )
             );
-          })()}
-        </div>
+            onNotify('已设为 100% 铺满画布并居中');
+          }}
+          onTogglePlayMotion={() => setPlayMotion((v) => !v)}
+          onResetWidgetOrPluginDefaultSize={handleResetWidgetOrPluginDefaultSize}
+          onSelectAllVisible={() => {
+            setSelectedIds(
+              layoutElements
+                .filter((el) => !isElementHidden(project, layoutIndex, el))
+                .map((el) => el.id)
+            );
+          }}
+          onQuickAdd={handleQuickAddKind}
+          onTriggerLocalUploadEl={() => {
+            fileUploadModeRef.current = 'el';
+            fileUploadRef.current?.click();
+          }}
+          onEnterBgAdj={() => {
+            setSelectedIds([]);
+            setAdjBg(true);
+          }}
+          onToggleSafeZone={() => setShowSafeZone((v) => !v)}
+          onToggleGridRulers={() => setShowGridRulers((v) => !v)}
+          onSwitchLayout={(idx) => {
+            setLayoutIndex(idx);
+            setSelectedIds([]);
+            setAdjBg(false);
+          }}
+          onToggleLayoutFollow={(idx) => {
+            commitProject((draft) => {
+              const lay = draft.layouts[idx];
+              if (lay) {
+                lay.follow = !lay.follow;
+                if (!lay.follow && !lay.elements) {
+                  lay.elements = cloneProj(draft).master;
+                }
+              }
+              return draft;
+            });
+            onNotify(
+              project.layouts[idx]?.follow
+                ? '已切换为独立定制布局'
+                : '已恢复跟随主布局'
+            );
+          }}
+          onSmartReflowLayout={handleSmartReflowLayout}
+          onDeleteLayout={(idx) => {
+            if (idx <= 0 || project.layouts.length <= 1) return;
+            commitProject((draft) => {
+              draft.layouts.splice(idx, 1);
+              return draft;
+            });
+            setLayoutIndex((prev) => (prev === idx ? 0 : prev > idx ? prev - 1 : prev));
+            setSelectedIds([]);
+            onNotify('已删除该规格画布');
+          }}
+        />
       )}
 
       {/* ==================== MODALS ==================== */}
@@ -3462,6 +4317,46 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                 className="rounded-xl bg-[#5E45F8] px-4 py-1.5 text-[12px] font-bold text-white hover:bg-[#4D34E6]"
               >
                 确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save As My Asset Modal */}
+      {saveAssetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#120733]/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-[24px] border border-white/80 bg-white/95 p-5 shadow-2xl backdrop-blur-xl">
+            <h3 className="text-[15px] font-bold text-[#1A172B]">存为我的素材预设</h3>
+            <p className="mt-1 text-[11.5px] text-[#6B6880]">
+              将当前选中的 {selectedElements.length} 个图层居中归一化，保存至「素材 → 我的」以便跨主题复用。
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={saveAssetName}
+              onChange={(e) => setSaveAssetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirmSaveAsset();
+                if (e.key === 'Escape') setSaveAssetModalOpen(false);
+              }}
+              placeholder="输入素材预设名称"
+              className="mt-3 w-full rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-3 py-2 text-[13px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSaveAssetModalOpen(false)}
+                className="rounded-xl border border-[#E6E4F2] px-3 py-1.5 text-[12px] text-[#6B6880]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSaveAsset}
+                className="rounded-xl bg-[#5E45F8] px-4 py-1.5 text-[12px] font-bold text-white hover:bg-[#4D34E6]"
+              >
+                保存到我的素材
               </button>
             </div>
           </div>

@@ -73,6 +73,13 @@ export interface EditorElementBase {
   ls?: number; // letter-spacing * 100 em
   fx?: TextEffectKind;
   vert?: boolean;
+  shadow?: {
+    color: string;
+    alpha?: number; // 0 - 100
+    blur: number; // cqmin
+    x: number; // cqmin
+    y: number; // cqmin
+  };
   g?: string; // group id
   hide?: boolean;
 }
@@ -105,7 +112,17 @@ export interface TextElement extends EditorElementBase {
   lh?: number;
   g1?: string;
   g2?: string;
+  gAngle?: number;
 }
+
+export type ImageFeatherMode =
+  | 'all'
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'bottom'
+  | 'horizontal'
+  | 'vertical';
 
 export interface ImageElement extends EditorElementBase {
   kind: 'image';
@@ -122,6 +139,10 @@ export interface ImageElement extends EditorElementBase {
   cropScale?: number; // 1 - 2.5, default 1
   cropX?: number; // -50 - 50, default 0
   cropY?: number; // -50 - 50, default 0
+  feather?: {
+    mode: ImageFeatherMode;
+    strength: number; // 0 - 60 (%)
+  };
   sourceMeta?: {
     origin: 'local' | 'library' | 'cloud' | 'capture';
     naturalWidth?: number;
@@ -141,6 +162,16 @@ export interface VideoElement extends EditorElementBase {
   fit?: 'fill' | 'cover' | 'contain';
   radius?: number;
   blur?: number;
+  brightness?: number; // 50 - 150, default 100
+  contrast?: number; // 50 - 150, default 100
+  saturate?: number; // 0 - 200, default 100
+  cropScale?: number; // 1 - 2.5, default 1
+  cropX?: number; // -50 - 50, default 0
+  cropY?: number; // -50 - 50, default 0
+  feather?: {
+    mode: ImageFeatherMode;
+    strength: number; // 0 - 60 (%)
+  };
   sourceMeta?: {
     origin: 'local' | 'library' | 'capture';
     naturalWidth?: number;
@@ -157,6 +188,10 @@ export interface ShapeElement extends EditorElementBase {
   radius: number;
   bw?: number;
   strokeColor?: string;
+  fillMode?: 'solid' | 'gradient';
+  color2?: string;
+  gradAngle?: number;
+  backdropBlur?: number; // px
 }
 
 export interface MotionElement extends EditorElementBase {
@@ -236,6 +271,9 @@ export interface BgConfig {
   angle?: number;
   dim: number; // 0 - 80
   blur: number; // 0 - 12
+  brightness?: number; // 50 - 150, default 100
+  contrast?: number; // 50 - 150, default 100
+  saturate?: number; // 0 - 200, default 100
   fit: 'cover' | 'contain' | 'stretch';
   hide?: boolean;
   tx?: number;

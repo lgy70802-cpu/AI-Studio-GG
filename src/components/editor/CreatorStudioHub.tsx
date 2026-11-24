@@ -9,8 +9,10 @@ import {
   FolderUp,
   Layers,
   Monitor,
+  MoreHorizontal,
   Plus,
   RefreshCw,
+  Search,
   Server,
   Sparkles,
   Trash2,
@@ -26,10 +28,11 @@ import {
   EDITOR_DEVICE_SPECS,
   createBlankEditorProject,
   ensureEditorProjectFromTheme,
+  genEditorId,
   makeElement,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
-import { EditorThemeProject } from '../../types/editor';
+import { EditorThemeProject, THEME_SCHEMA_VERSION } from '../../types/editor';
 import { ThemeArtwork } from '../ThemeArtwork';
 
 interface CreatorStudioHubProps {
@@ -72,6 +75,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
         : 'd92-land'
   );
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
+  const [heroMenuOpen, setHeroMenuOpen] = useState(false);
   const [previewBuiltin, setPreviewBuiltin] = useState<BuiltinTemplateSpec | null>(null);
   const [offlineSim, setOfflineSim] = useState(() => cloudResourceAdapter.isOfflineSimulated());
   const [mockTitle, setMockTitle] = useState('云端限定 · 极光效能桌搭');
@@ -83,7 +87,15 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
     Record<string, { latestVersion: string; changelog: string }>
   >({});
 
+  // Template & My Works search/filter state
+  const [tplSearch, setTplSearch] = useState('');
+  const [tplCat, setTplCat] = useState<'全部' | '动态时钟' | '主题'>('全部');
+  const [workSearch, setWorkSearch] = useState('');
+  const [workOri, setWorkOri] = useState<'all' | 'landscape' | 'portrait'>('all');
+
   const localImportRef = useRef<HTMLInputElement | null>(null);
+  const jsonImportRef = useRef<HTMLInputElement | null>(null);
+  const heroMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedSpec =
     EDITOR_DEVICE_SPECS.find((s) => s.id === selectedSpecId) ?? EDITOR_DEVICE_SPECS[0];
@@ -92,6 +104,43 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
     () => themes.filter((t) => t.source === 'custom' || Boolean(t.editorProject)),
     [themes]
   );
+
+  const filteredTemplates = useMemo(() => {
+    const q = tplSearch.trim().toLowerCase();
+    return BUILTIN_TEMPLATES.filter((tpl) => {
+      if (tplCat !== '全部' && tpl.category !== tplCat) return false;
+      if (!q) return true;
+      return (
+        tpl.name.toLowerCase().includes(q) ||
+        tpl.subCategory.toLowerCase().includes(q) ||
+        tpl.tags.some((tag) => tag.toLowerCase().includes(q))
+      );
+    });
+  }, [tplCat, tplSearch]);
+
+  const filteredCustomThemes = useMemo(() => {
+    const q = workSearch.trim().toLowerCase();
+    return customThemes.filter((item) => {
+      if (workOri !== 'all' && item.orientation !== workOri) return false;
+      if (!q) return true;
+      return (
+        item.displayName.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q) ||
+        item.resolution.toLowerCase().includes(q)
+      );
+    });
+  }, [customThemes, workOri, workSearch]);
+
+  useEffect(() => {
+    if (!heroMenuOpen) return;
+    const onOutside = (e: MouseEvent) => {
+      if (heroMenuRef.current && !heroMenuRef.current.contains(e.target as Node)) {
+        setHeroMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onOutside);
+    return () => window.removeEventListener('mousedown', onOutside);
+  }, [heroMenuOpen]);
 
   // Check cloud template updates for user's saved cloud-derived projects
   useEffect(() => {
@@ -169,6 +218,33 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
     onEnterEditor(proj);
   };
 
+  const handleImportProjectJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || '{}'));
+        if (!parsed.bg || !Array.isArray(parsed.master)) {
+          onNotify('工程文件格式校验失败：缺少有效的背景或图层结构');
+          return;
+        }
+        const imported: EditorThemeProject = {
+          ...parsed,
+          template_id: parsed.template_id || genEditorId('imp'),
+          schema_version: parsed.schema_version || THEME_SCHEMA_VERSION,
+          updated_at: Date.now(),
+        };
+        onNotify(`已导入工程「${imported.name || f.name}」，正在打开编辑器`);
+        onEnterEditor(imported);
+      } catch {
+        onNotify('工程 JSON 解析失败，请确认文件格式有效');
+      }
+    };
+    reader.readAsText(f);
+  };
+
   const handlePublishMockCloudTemplate = () => {
     const item = cloudResourceAdapter.publishMockTemplate({
       name: mockTitle.trim() || '云端新发布模板',
@@ -204,6 +280,13 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
         className="hidden"
         onChange={(e) => void handleQuickImportLocal(e)}
       />
+      <input
+        ref={jsonImportRef}
+        type="file"
+        accept=".json,.d92theme.json"
+        className="hidden"
+        onChange={handleImportProjectJson}
+      />
 
       {/* Hero Entry Card: Cosmic Violet Studio Showcase */}
       <div className="aurora-dark-card rounded-[26px] p-5 sm:p-6 text-white shadow-[0_22px_50px_rgba(24,10,68,0.26)]">
@@ -212,38 +295,66 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
             创作中心
           </h2>
 
-          {/* Mock WEB Admin & Offline Toggle */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Primary Import + Tucked Developer Menu */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                const next = !offlineSim;
-                cloudResourceAdapter.setSimulateOffline(next);
-                setOfflineSim(next);
-                onNotify(next ? '已切换至离线模式' : '已恢复云端目录连接');
-              }}
-              className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12px] font-semibold backdrop-blur-md transition-colors whitespace-nowrap ${
-                offlineSim
-                  ? 'border-amber-400/50 bg-amber-500/20 text-amber-200'
-                  : 'border-white/15 bg-white/10 text-white/90 hover:border-white/35 hover:bg-white/15'
-              }`}
+              onClick={() => jsonImportRef.current?.click()}
+              className="flex items-center gap-1.5 rounded-xl border border-white/18 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white/95 backdrop-blur-md transition-colors hover:border-[#A78BFA]/70 hover:bg-white/18 whitespace-nowrap"
             >
-              {offlineSim ? (
-                <WifiOff className="h-3.5 w-3.5" />
-              ) : (
-                <Wifi className="h-3.5 w-3.5 text-emerald-300" />
-              )}
-              <span>{offlineSim ? '离线模式' : '云端在线'}</span>
+              <Upload className="h-3.5 w-3.5 text-[#C4B5FD]" />
+              <span>导入工程包</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setAdminDrawerOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white/95 backdrop-blur-md transition-colors hover:border-[#A78BFA]/70 hover:bg-white/18 whitespace-nowrap"
-            >
-              <Server className="h-3.5 w-3.5 text-[#C4B5FD]" />
-              <span>云端后台</span>
-            </button>
+            <div ref={heroMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setHeroMenuOpen((v) => !v)}
+                title="更多工具与联调设置"
+                aria-label="更多工具与联调设置"
+                className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white/85 backdrop-blur-md transition-colors hover:border-white/35 hover:bg-white/18 hover:text-white"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {heroMenuOpen && (
+                <div className="absolute right-0 top-10 z-40 w-52 rounded-2xl border border-[#E6E4F2] bg-white/96 p-1.5 text-[12px] text-[#1A172B] shadow-[0_18px_46px_rgba(24,10,68,0.24)] backdrop-blur-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHeroMenuOpen(false);
+                      const next = !offlineSim;
+                      cloudResourceAdapter.setSimulateOffline(next);
+                      setOfflineSim(next);
+                      onNotify(next ? '已切换至离线模拟模式' : '已恢复云端目录连接');
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left font-medium hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                  >
+                    <span className="flex items-center gap-2">
+                      {offlineSim ? (
+                        <WifiOff className="h-3.5 w-3.5 text-amber-600" />
+                      ) : (
+                        <Wifi className="h-3.5 w-3.5 text-emerald-600" />
+                      )}
+                      <span>{offlineSim ? '切回云端在线' : '模拟离线模式'}</span>
+                    </span>
+                    <span className="text-[10.5px] text-[#8B87A1]">
+                      {offlineSim ? '离线' : '在线'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHeroMenuOpen(false);
+                      setAdminDrawerOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left font-medium hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                  >
+                    <Server className="h-3.5 w-3.5 text-[#5E45F8]" />
+                    <span>云端模板发布台（调试）</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -332,14 +443,70 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
 
       {/* Built-in Offline Starters */}
       <div className="rounded-[24px] border border-white/80 bg-white/92 p-5 shadow-[0_12px_36px_rgba(30,20,80,0.06)] backdrop-blur-xl">
-        <div className="mb-3.5 flex items-center justify-between gap-2">
+        <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2.5">
           <h3 className="text-[15.5px] font-bold text-[#1A172B]">
-            内置模板 ({BUILTIN_TEMPLATES.length})
+            内置模板 ({filteredTemplates.length})
           </h3>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-xl bg-[#F4F3FA] p-1 text-[11.5px] font-semibold">
+              {(['全部', '动态时钟', '主题'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setTplCat(cat)}
+                  className={`rounded-lg px-2.5 py-1 transition-colors whitespace-nowrap ${
+                    tplCat === cat
+                      ? 'bg-white text-[#5E45F8] shadow-xs'
+                      : 'text-[#6B6880] hover:text-[#1A172B]'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8E89A6]" />
+              <input
+                type="text"
+                value={tplSearch}
+                onChange={(e) => setTplSearch(e.target.value)}
+                placeholder="搜索模板…"
+                aria-label="搜索内置模板"
+                className="w-40 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] py-1.5 pl-8 pr-6 text-[12px] text-[#1A172B] placeholder:text-[#9A96AE] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+              />
+              {tplSearch && (
+                <button
+                  type="button"
+                  onClick={() => setTplSearch('')}
+                  aria-label="清除搜索"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8E89A6] hover:text-[#1A172B]"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
+        {filteredTemplates.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#DAD6F0] bg-[#F8F7FC] py-8 text-center">
+            <p className="text-[12.5px] font-medium text-[#6B6880]">未找到匹配的内置模板</p>
+            <button
+              type="button"
+              onClick={() => {
+                setTplSearch('');
+                setTplCat('全部');
+              }}
+              className="mt-2 rounded-lg bg-[#EFEBFD] px-3 py-1 text-[11.5px] font-semibold text-[#5E45F8] hover:bg-[#E4DCFC]"
+            >
+              重置筛选
+            </button>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          {BUILTIN_TEMPLATES.map((tpl) => {
+          {filteredTemplates.map((tpl) => {
             const previewProj = createBlankEditorProject(makeDeviceWithSpec(), {
               name: tpl.name,
               template: tpl,
@@ -423,33 +590,105 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
             );
           })}
         </div>
+        )}
       </div>
 
       {/* User's Saved Custom Projects */}
       <div className="rounded-[24px] border border-white/80 bg-white/92 p-5 shadow-[0_12px_36px_rgba(30,20,80,0.06)] backdrop-blur-xl">
-        <div className="mb-3.5 flex items-center justify-between gap-2">
+        <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2.5">
           <h3 className="text-[15.5px] font-bold text-[#1A172B]">
-            我的作品 ({customThemes.length})
+            我的作品 ({filteredCustomThemes.length})
           </h3>
-          <button
-            type="button"
-            onClick={handleStartBlank}
-            className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#6A52FF] to-[#563CEB] px-3.5 py-1.5 text-[12px] font-bold text-white shadow-[0_6px_16px_rgba(94,69,248,0.28)] hover:opacity-95 whitespace-nowrap"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>新建工程</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {customThemes.length > 0 && (
+              <>
+                <div className="flex items-center rounded-xl bg-[#F4F3FA] p-1 text-[11.5px] font-semibold">
+                  {(
+                    [
+                      { id: 'all', label: '全部' },
+                      { id: 'landscape', label: '横屏' },
+                      { id: 'portrait', label: '竖屏' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setWorkOri(opt.id)}
+                      className={`rounded-lg px-2.5 py-1 transition-colors whitespace-nowrap ${
+                        workOri === opt.id
+                          ? 'bg-white text-[#5E45F8] shadow-xs'
+                          : 'text-[#6B6880] hover:text-[#1A172B]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8E89A6]" />
+                  <input
+                    type="text"
+                    value={workSearch}
+                    onChange={(e) => setWorkSearch(e.target.value)}
+                    placeholder="搜索作品…"
+                    aria-label="搜索我的作品"
+                    className="w-36 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] py-1.5 pl-8 pr-6 text-[12px] text-[#1A172B] placeholder:text-[#9A96AE] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                  />
+                  {workSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setWorkSearch('')}
+                      aria-label="清除搜索"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8E89A6] hover:text-[#1A172B]"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => jsonImportRef.current?.click()}
+              className="flex items-center gap-1 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-3 py-1.5 text-[12px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8] whitespace-nowrap"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              <span>导入工程</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleStartBlank}
+              className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#6A52FF] to-[#563CEB] px-3.5 py-1.5 text-[12px] font-bold text-white shadow-[0_6px_16px_rgba(94,69,248,0.28)] hover:opacity-95 whitespace-nowrap"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>新建工程</span>
+            </button>
+          </div>
         </div>
 
         {customThemes.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[#DAD6F0] bg-[#F8F7FC] py-8 text-center">
             <p className="text-[12.5px] font-medium text-[#6B6880]">
-              暂无自制主题，点击新建或选用模板开始创作
+              暂无自制主题，点击新建、导入工程或选用模板开始创作
             </p>
+          </div>
+        ) : filteredCustomThemes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#DAD6F0] bg-[#F8F7FC] py-8 text-center">
+            <p className="text-[12.5px] font-medium text-[#6B6880]">未找到匹配的自定义作品</p>
+            <button
+              type="button"
+              onClick={() => {
+                setWorkSearch('');
+                setWorkOri('all');
+              }}
+              className="mt-2 rounded-lg bg-[#EFEBFD] px-3 py-1 text-[11.5px] font-semibold text-[#5E45F8] hover:bg-[#E4DCFC]"
+            >
+              重置筛选
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {customThemes.map((item) => {
+            {filteredCustomThemes.map((item) => {
               const isCurrent = item.id === activeTheme.id;
               const isPort = item.orientation === 'portrait';
               const cloudUpd = item.editorProject?.cloudTemplateId

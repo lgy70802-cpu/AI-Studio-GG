@@ -309,6 +309,278 @@ export function computeImportMediaBox(nw: number, nh: number, cw: number, ch: nu
   };
 }
 
+const REFLOW_FX: Record<'l' | 'c' | 'r', number> = { l: 0, c: 50, r: 100 };
+const REFLOW_FY: Record<'t' | 'm' | 'b', number> = { t: 0, m: 50, b: 100 };
+
+export function reflowElementsForSize(
+  elements: EditorElement[],
+  fromSize: [number, number],
+  toSize: [number, number]
+): EditorElement[] {
+  const [fromW, fromH] = fromSize;
+  const [toW, toH] = toSize;
+  const fromPortrait = fromW < fromH;
+  const toPortrait = toW < toH;
+  const toMinDim = Math.min(toW, toH);
+
+  const cloned = structuredClone(elements);
+  if (fromW === toW && fromH === toH) return cloned;
+
+  const isFullBleedOverlay = (el: EditorElement) =>
+    el.kind === 'motion' && el.w >= 90 && el.h >= 90;
+
+  // Same orientation with different dimensions: preserve relative layout & clamp safely
+  if (fromPortrait === toPortrait) {
+    const scaleW = fromW / Math.max(1, toW);
+    const scaleH = fromH / Math.max(1, toH);
+    return cloned.map((el) => {
+      if (isFullBleedOverlay(el)) {
+        return { ...el, a: 'mc', x: 0, y: 0, w: 100, h: 100 };
+      }
+      if (el.kind === 'image' || el.kind === 'video') {
+        const nw = el.sourceMeta?.naturalWidth || Math.round(((el.w ?? 25) * fromW) / 100);
+        const nh = el.sourceMeta?.naturalHeight || Math.round(((el.h ?? 30) * fromH) / 100);
+        const curPxW = ((el.w ?? 25) * fromW) / 100;
+        const curPxH = ((el.h ?? 30) * fromH) / 100;
+        const box =
+          curPxW > toW || curPxH > toH
+            ? computeFit100BoxPct(nw, nh, toW, toH)
+            : computeNaturalBoxPct(curPxW, curPxH, toW, toH);
+        return { ...el, w: box.w, h: box.h, ar: box.ar, size: box.size };
+      }
+      if ('w' in el && typeof el.w === 'number' && 'h' in el && typeof el.h === 'number') {
+        return {
+          ...el,
+          w: +Math.max(0.4, Math.min(96, el.w * scaleW)).toFixed(2),
+          h: +Math.max(0.4, Math.min(96, el.h * scaleH)).toFixed(2),
+        } as EditorElement;
+      }
+      return el;
+    });
+  }
+
+  const getAbsCenter = (el: EditorElement) => {
+    const fx = REFLOW_FX[el.a[1] as 'l' | 'c' | 'r'] ?? 50;
+    const fy = REFLOW_FY[el.a[0] as 't' | 'm' | 'b'] ?? 50;
+    return { absX: fx + el.x, absY: fy + el.y };
+  };
+
+  const fgIndices: number[] = [];
+  cloned.forEach((el, idx) => {
+    if (!el.hide && !isFullBleedOverlay(el)) {
+      fgIndices.push(idx);
+    }
+  });
+
+  if (!fromPortrait && toPortrait) {
+    // Landscape -> Portrait: stack left-to-right visual groups vertically
+    fgIndices.sort((ia, ib) => {
+      const ca = getAbsCenter(cloned[ia]);
+      const cb = getAbsCenter(cloned[ib]);
+      const bucketA = Math.round(ca.absX / 20);
+      const bucketB = Math.round(cb.absX / 20);
+      if (bucketA !== bucketB) return bucketA - bucketB;
+      return ca.absY - cb.absY;
+    });
+
+    const weights = fgIndices.map((idx) => {
+      const el = cloned[idx];
+      if (el.kind === 'widget' || el.kind === 'plugin') return 1.5;
+      if (el.kind === 'image' || el.kind === 'video') return 1.4;
+      if (el.kind === 'shape' && el.h < 4) return 0.45;
+      return 1;
+    });
+    const totalW = weights.reduce((s, w) => s + w, 0) || 1;
+    const topBand = fgIndices.length <= 2 ? 26 : 12;
+    const bottomBand = fgIndices.length <= 2 ? 74 : 88;
+    const span = bottomBand - topBand;
+
+    let acc = 0;
+    const ySlots = new Map<number, number>();
+    fgIndices.forEach((idx, i) => {
+      const w = weights[i];
+      const centerRatio = (acc + w / 2) / totalW;
+      acc += w;
+      ySlots.set(idx, topBand + centerRatio * span);
+    });
+
+    return cloned.map((el, idx) => {
+      if (isFullBleedOverlay(el)) {
+        return { ...el, a: 'mc', x: 0, y: 0, w: 100, h: 100 };
+      }
+      if (el.hide) return el;
+      const targetY = ySlots.get(idx) ?? 50;
+      const basePos = { a: 'mc' as const, x: 0, y: +(targetY - 50).toFixed(2) };
+
+      if (el.kind === 'clock') {
+        return {
+          ...el,
+          ...basePos,
+          size: +Math.min(el.size, el.style === 'analog' ? 28 : 25).toFixed(1),
+        };
+      }
+      if (el.kind === 'date') {
+        return {
+          ...el,
+          ...basePos,
+          size: +Math.min(el.size, 7.5).toFixed(1),
+        };
+      }
+      if (el.kind === 'text') {
+        return {
+          ...el,
+          ...basePos,
+          size: +Math.min(el.size, 9.5).toFixed(1),
+          align: 'center',
+          ...(el.w != null ? { w: Math.min(86, Math.max(48, Math.round(el.w * 1.8))) } : {}),
+        };
+      }
+      if (el.kind === 'widget' || el.kind === 'plugin') {
+        return {
+          ...el,
+          ...basePos,
+          w: 84,
+          h: +Math.max(15, Math.min(32, el.h * 0.42)).toFixed(1),
+        } as EditorElement;
+      }
+      if (el.kind === 'image' || el.kind === 'video') {
+        const nw = el.sourceMeta?.naturalWidth || Math.round(((el.w ?? 25) * fromW) / 100);
+        const nh = el.sourceMeta?.naturalHeight || Math.round(((el.h ?? 30) * fromH) / 100);
+        const box = computeFit100BoxPct(nw, nh, toW * 0.84, toH * 0.34);
+        const finalW = +((box.w * 0.84)).toFixed(2);
+        const finalH = +((box.h * 0.34)).toFixed(2);
+        return {
+          ...el,
+          ...basePos,
+          w: finalW,
+          h: finalH,
+          ar: box.ar,
+          size: +Math.max(2, (finalH * toH) / toMinDim).toFixed(1),
+        };
+      }
+      if (el.kind === 'shape') {
+        const isThinVert = el.h > el.w * 4;
+        const isThinHoriz = el.w > el.h * 3;
+        if (isThinVert || isThinHoriz) {
+          return { ...el, ...basePos, w: 68, h: 0.4 };
+        }
+        return {
+          ...el,
+          ...basePos,
+          w: +Math.min(84, Math.max(16, el.w * 1.4)).toFixed(1),
+          h: +Math.min(28, Math.max(6, el.h * 0.35)).toFixed(1),
+        };
+      }
+      return { ...el, ...basePos };
+    });
+  }
+
+  // Portrait -> Landscape: distribute top-to-bottom groups across horizontal columns
+  fgIndices.sort((ia, ib) => {
+    const ca = getAbsCenter(cloned[ia]);
+    const cb = getAbsCenter(cloned[ib]);
+    if (Math.abs(ca.absY - cb.absY) > 6) return ca.absY - cb.absY;
+    return ca.absX - cb.absX;
+  });
+
+  // Group clock + adjacent date/text together so they stack neatly in the same horizontal column
+  const cols: number[][] = [];
+  fgIndices.forEach((idx) => {
+    const el = cloned[idx];
+    const lastCol = cols[cols.length - 1];
+    if (
+      lastCol &&
+      lastCol.length < 2 &&
+      (el.kind === 'date' || (el.kind === 'text' && cloned[lastCol[0]]?.kind === 'clock'))
+    ) {
+      lastCol.push(idx);
+    } else {
+      cols.push([idx]);
+    }
+  });
+
+  const colCount = Math.max(1, cols.length);
+  const posByIdx = new Map<number, { x: number; y: number }>();
+  cols.forEach((colItems, cIdx) => {
+    const colX =
+      colCount === 1 ? 0 : -30 + (cIdx / (colCount - 1)) * 60;
+    const rowCount = colItems.length;
+    colItems.forEach((elIdx, rIdx) => {
+      const rowY =
+        rowCount === 1 ? 0 : rIdx === 0 ? -10 : 20;
+      posByIdx.set(elIdx, { x: +colX.toFixed(2), y: rowY });
+    });
+  });
+
+  return cloned.map((el, idx) => {
+    if (isFullBleedOverlay(el)) {
+      return { ...el, a: 'mc', x: 0, y: 0, w: 100, h: 100 };
+    }
+    if (el.hide) return el;
+    const pos = posByIdx.get(idx) ?? { x: 0, y: 0 };
+    const basePos = { a: 'mc' as const, x: pos.x, y: pos.y };
+
+    if (el.kind === 'clock') {
+      return {
+        ...el,
+        ...basePos,
+        size: +Math.max(24, Math.min(38, el.size * 1.2)).toFixed(1),
+      };
+    }
+    if (el.kind === 'date') {
+      return {
+        ...el,
+        ...basePos,
+        size: +Math.max(6, Math.min(10, el.size * 1.15)).toFixed(1),
+      };
+    }
+    if (el.kind === 'text') {
+      return {
+        ...el,
+        ...basePos,
+        size: +Math.max(6, Math.min(13, el.size * 1.15)).toFixed(1),
+        ...(el.w != null ? { w: Math.min(42, Math.max(18, Math.round(el.w * 0.45))) } : {}),
+      };
+    }
+    if (el.kind === 'widget' || el.kind === 'plugin') {
+      return {
+        ...el,
+        ...basePos,
+        w: +Math.min(36, Math.max(24, el.w * 0.36)).toFixed(1),
+        h: +Math.min(78, Math.max(48, el.h * 2.2)).toFixed(1),
+      } as EditorElement;
+    }
+    if (el.kind === 'image' || el.kind === 'video') {
+      const nw = el.sourceMeta?.naturalWidth || Math.round(((el.w ?? 40) * fromW) / 100);
+      const nh = el.sourceMeta?.naturalHeight || Math.round(((el.h ?? 25) * fromH) / 100);
+      const box = computeFit100BoxPct(nw, nh, toW * 0.34, toH * 0.8);
+      const finalW = +((box.w * 0.34)).toFixed(2);
+      const finalH = +((box.h * 0.8)).toFixed(2);
+      return {
+        ...el,
+        ...basePos,
+        w: finalW,
+        h: finalH,
+        ar: box.ar,
+        size: +Math.max(2, (finalH * toH) / toMinDim).toFixed(1),
+      };
+    }
+    if (el.kind === 'shape') {
+      const isThinHoriz = el.w > el.h * 3;
+      if (isThinHoriz) {
+        return { ...el, ...basePos, w: 28, h: 1.5 };
+      }
+      return {
+        ...el,
+        ...basePos,
+        w: +Math.min(36, Math.max(8, el.w * 0.35)).toFixed(1),
+        h: +Math.min(76, Math.max(12, el.h * 2.2)).toFixed(1),
+      };
+    }
+    return { ...el, ...basePos };
+  });
+}
+
 export function makeElement<K extends EditorElement['kind']>(
   kind: K,
   overrides: Partial<Extract<EditorElement, { kind: K }>> = {}

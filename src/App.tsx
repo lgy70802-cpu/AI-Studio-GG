@@ -28,7 +28,7 @@ import {
   ScreenOrientation,
   ThemeItem,
 } from './data/themes';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, SidebarMode } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { HomeDashboard } from './components/HomeDashboard';
 import { SecondaryViews } from './components/SecondaryViews';
@@ -91,6 +91,7 @@ export default function App() {
     project: EditorThemeProject;
     sourceThemeId?: string;
   } | null>(null);
+  const [editorSidebarMode, setEditorSidebarMode] = useState<SidebarMode>('hidden');
   const [tempPreview, setTempPreview] = useState<{
     scopeKey: string;
     prevThemeId: string;
@@ -1374,16 +1375,32 @@ export default function App() {
     { id: 'settings', label: '设置' },
   ];
 
+  const isInEditor = activeNav === 'creator' && Boolean(editorSession);
+
   return (
-    <div className="studio-ambient-bg h-screen w-full overflow-hidden p-2 sm:p-4 lg:p-5 flex items-stretch justify-center">
-      {/* Main Frosted Glass Desktop App Shell (Matching Figure 2's elevated frame) */}
-      <div className="relative flex h-full w-full max-w-[1440px] overflow-hidden rounded-[28px] border border-white/80 bg-[#F7F7FC]/92 shadow-[0_30px_90px_rgba(45,28,110,0.13)] backdrop-blur-2xl">
+    <div
+      className={
+        isInEditor
+          ? 'flex h-screen w-full items-stretch justify-center overflow-hidden bg-[#F7F7FC] p-0'
+          : 'studio-ambient-bg flex h-screen w-full items-stretch justify-center overflow-hidden p-2 sm:p-4 lg:p-5'
+      }
+    >
+      {/* Main Frosted Glass Desktop App Shell (Full-viewport edge-to-edge in Editor) */}
+      <div
+        className={
+          isInEditor
+            ? 'relative flex h-full w-full overflow-hidden bg-[#F7F7FC]'
+            : 'relative flex h-full w-full max-w-[1440px] overflow-hidden rounded-[28px] border border-white/80 bg-[#F7F7FC]/92 shadow-[0_30px_90px_rgba(45,28,110,0.13)] backdrop-blur-2xl'
+        }
+      >
         {/* Left Navigation Rail */}
         <Sidebar
           activeNav={activeNav}
           onSelectNav={setActiveNav}
           activeDevice={activeDevice}
           isPlaying={isPlaying}
+          mode={isInEditor ? editorSidebarMode : 'full'}
+          onChangeMode={isInEditor ? setEditorSidebarMode : undefined}
         />
 
         {/* Mobile Drawer Menu */}
@@ -1583,6 +1600,8 @@ export default function App() {
                 onSelectDevice={handleSelectDevice}
                 onUpdateDevice={handleUpdateDevice}
                 editorSession={editorSession}
+                editorSidebarMode={editorSidebarMode}
+                onChangeEditorSidebarMode={setEditorSidebarMode}
                 onEnterEditor={(proj, srcId) =>
                   setEditorSession({ project: proj, sourceThemeId: srcId })
                 }

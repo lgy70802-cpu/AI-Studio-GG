@@ -12,24 +12,32 @@ import {
   ArrowDownToLine,
   ArrowUp,
   ArrowUpToLine,
+  BookmarkPlus,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   Copy,
   Edit3,
   Eye,
   EyeOff,
   Film,
+  FlipHorizontal2,
+  FlipVertical2,
   Group,
   Layers,
   Link2,
   Link2Off,
   Lock,
   Move,
+  Paintbrush,
   RotateCcw,
   RotateCw,
   Trash2,
   Ungroup,
   Unlock,
+  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -50,8 +58,10 @@ import {
   DateElement,
   DatePartKind,
   EditorElement,
+  EditorElementBase,
   EditorThemeProject,
   ImageElement,
+  ImageFeatherMode,
   MotionElement,
   PluginElement,
   ShapeElement,
@@ -280,6 +290,265 @@ const ScrubNumberInput: React.FC<ScrubNumberInputProps> = ({
   );
 };
 
+interface VisualFontSelectProps {
+  value: string;
+  onChange: (fontId: string) => void;
+  ariaLabel?: string;
+}
+
+const VisualFontSelect: React.FC<VisualFontSelectProps> = ({
+  value,
+  onChange,
+  ariaLabel = '选择字体',
+}) => {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const current = EDITOR_FONTS.find((f) => f.id === value) ?? EDITOR_FONTS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative mt-1">
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-left transition-colors hover:border-[#C5BDF5] hover:bg-white"
+      >
+        <div className="min-w-0 flex-1">
+          <div
+            className="truncate text-[12px] font-semibold text-[#1A172B]"
+            style={{ fontFamily: current.css || undefined }}
+          >
+            {current.label}
+          </div>
+          <div className="truncate text-[10px] text-[#7D7893]">{current.license}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span
+            className="font-mono-tabular text-[11px] font-semibold text-[#5E45F8]"
+            style={{ fontFamily: current.css || undefined }}
+          >
+            Aa 12
+          </span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 text-[#6B6880] transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </div>
+      </button>
+
+      {open && (
+        <div className="studio-scroll absolute left-0 right-0 top-full z-40 mt-1 max-h-60 overflow-y-auto rounded-xl border border-[#E6E4F2] bg-white p-1 shadow-[0_14px_36px_rgba(24,10,68,0.18)]">
+          {EDITOR_FONTS.map((f) => {
+            const active = f.id === value;
+            return (
+              <button
+                key={f.id || 'default'}
+                type="button"
+                onClick={() => {
+                  onChange(f.id);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
+                  active
+                    ? 'bg-[#EFEBFD] text-[#5E45F8]'
+                    : 'text-[#1A172B] hover:bg-[#F5F4FA]'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="truncate text-[12.5px] font-semibold"
+                    style={{ fontFamily: f.css || undefined }}
+                  >
+                    {f.label}
+                  </div>
+                  <div className="truncate text-[9.5px] text-[#7D7893]">{f.license}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className="text-[12px] opacity-80"
+                    style={{ fontFamily: f.css || undefined }}
+                  >
+                    Aa 10:24
+                  </span>
+                  {active && <Check className="h-3.5 w-3.5 text-[#5E45F8]" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface ShadowControlsProps {
+  shadow?: EditorElementBase['shadow'];
+  extractedPalette?: string[];
+  onChange: (next?: EditorElementBase['shadow']) => void;
+}
+
+const ShadowControls: React.FC<ShadowControlsProps> = ({
+  shadow,
+  extractedPalette = [],
+  onChange,
+}) => (
+  <div className="space-y-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+    <div className="flex items-center justify-between text-[11px]">
+      <span className="font-semibold text-[#56526B]">投影阴影</span>
+      {shadow ? (
+        <button
+          type="button"
+          onClick={() => onChange(undefined)}
+          className="text-[10.5px] font-semibold text-[#5E45F8] hover:underline"
+        >
+          关闭投影
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onChange({ color: '#000000', alpha: 55, blur: 2.4, x: 0, y: 0.8 })}
+          className="rounded-md border border-[#D9D2FF] bg-white px-2 py-0.5 text-[10.5px] font-semibold text-[#5E45F8] hover:bg-[#EFEBFD]"
+        >
+          + 开启投影
+        </button>
+      )}
+    </div>
+    {shadow && (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={shadow.color || '#000000'}
+              aria-label="投影颜色"
+              onChange={(e) => onChange({ ...shadow, color: e.target.value })}
+              className="h-6 w-8 cursor-pointer rounded border border-[#E6E4F2]"
+            />
+            <span className="font-mono-tabular text-[10.5px] text-[#6B6880]">
+              {(shadow.color || '#000000').toUpperCase()}
+            </span>
+          </div>
+          {extractedPalette.length > 0 && (
+            <div className="flex items-center gap-1">
+              {extractedPalette.slice(0, 4).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  title={`使用推荐色 ${c}`}
+                  onClick={() => onChange({ ...shadow, color: c })}
+                  className="h-4 w-4 rounded-full border border-white shadow-xs"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        <InlineSlider
+          label="投影浓度"
+          min={10}
+          max={100}
+          value={shadow.alpha ?? 55}
+          displayValue={`${shadow.alpha ?? 55}%`}
+          onChange={(val) => onChange({ ...shadow, alpha: val })}
+        />
+        <InlineSlider
+          label="模糊半径"
+          min={0}
+          max={8}
+          step={0.2}
+          value={shadow.blur}
+          displayValue={`${shadow.blur.toFixed(1)}`}
+          onChange={(val) => onChange({ ...shadow, blur: val })}
+        />
+        <InlineSlider
+          label="水平偏移"
+          min={-4}
+          max={4}
+          step={0.2}
+          value={shadow.x}
+          displayValue={`${shadow.x.toFixed(1)}`}
+          onChange={(val) => onChange({ ...shadow, x: val })}
+        />
+        <InlineSlider
+          label="垂直偏移"
+          min={-4}
+          max={4}
+          step={0.2}
+          value={shadow.y}
+          displayValue={`${shadow.y.toFixed(1)}`}
+          onChange={(val) => onChange({ ...shadow, y: val })}
+        />
+      </div>
+    )}
+  </div>
+);
+
+type PluginFieldMeta =
+  | { label: string; type: 'text' | 'textarea' | 'boolean' }
+  | { label: string; type: 'number'; min: number; max: number; step?: number; unit?: string }
+  | { label: string; type: 'select'; options: { value: string; label: string }[] };
+
+const PLUGIN_CONFIG_FIELD_META: Record<string, PluginFieldMeta> = {
+  track: { label: '曲目名称', type: 'text' },
+  artist: { label: '歌手 / 艺人', type: 'text' },
+  showProgress: { label: '显示播放进度条', type: 'boolean' },
+  currentLine: { label: '当前高亮歌词', type: 'text' },
+  nextLine: { label: '下一句预览歌词', type: 'text' },
+  title: { label: '便签标题', type: 'text' },
+  content: { label: '便签正文内容', type: 'textarea' },
+  caption: { label: '相册标题', type: 'text' },
+  intervalSec: { label: '轮播间隔', type: 'number', min: 3, max: 120, step: 1, unit: '秒' },
+  focusMinutes: { label: '专注时长', type: 'number', min: 5, max: 90, step: 5, unit: '分' },
+  breakMinutes: { label: '休息时长', type: 'number', min: 1, max: 30, step: 1, unit: '分' },
+  symbol: { label: '股票 / 指数代码', type: 'text' },
+  price: { label: '展示价格', type: 'text' },
+  change: { label: '涨跌幅文案', type: 'text' },
+  refreshSeconds: { label: '刷新频率', type: 'number', min: 1, max: 30, step: 1, unit: '秒' },
+  showNet: { label: '显示网络速率', type: 'boolean' },
+  label: { label: '计时器标题', type: 'text' },
+  minutes: { label: '倒计时长', type: 'number', min: 1, max: 180, step: 1, unit: '分' },
+  item1: { label: '待办事项 1', type: 'text' },
+  item2: { label: '待办事项 2', type: 'text' },
+  item3: { label: '待办事项 3', type: 'text' },
+  fishCount: { label: '热带鱼数量', type: 'number', min: 1, max: 12, step: 1, unit: '条' },
+  bubbleDensity: {
+    label: '气泡密度',
+    type: 'select',
+    options: [
+      { value: 'low', label: '轻柔' },
+      { value: 'medium', label: '适中' },
+      { value: 'high', label: '丰富' },
+    ],
+  },
+  petName: { label: '萌宠昵称', type: 'text' },
+  mood: {
+    label: '情绪状态',
+    type: 'select',
+    options: [
+      { value: 'happy', label: '开心活跃' },
+      { value: 'chill', label: '慵懒打盹' },
+      { value: 'focus', label: '陪伴专注' },
+    ],
+  },
+};
+
 interface EditorInspectorProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -288,6 +557,10 @@ interface EditorInspectorProps {
   selectedElements: EditorElement[];
   adjBg: boolean;
   aspectLinked: boolean;
+  extractedPalette?: string[];
+  alignScope?: 'selection' | 'canvas';
+  hasStyleClipboard?: boolean;
+  onChangeAlignScope?: (scope: 'selection' | 'canvas') => void;
   onToggleAspectLink: () => void;
   onToggleAdjBg: (on: boolean) => void;
   onMutateBg: (fn: (b: BgConfig) => BgConfig, label?: string) => void;
@@ -297,8 +570,20 @@ interface EditorInspectorProps {
     label?: string,
     recordHistory?: boolean
   ) => void;
+  onBatchColor?: (hex: string) => void;
+  onBatchAlpha?: (alpha: number) => void;
+  onBatchFont?: (font: string) => void;
+  onBatchFontSize?: (sizeCqmin: number) => void;
+  onBatchRadius?: (radius: number) => void;
+  onCopyStyle?: () => void;
+  onPasteStyle?: () => void;
+  onSaveAsAsset?: () => void;
+  onReplaceBgImage?: () => void;
+  onUploadBgLocal?: () => void;
   onReplaceImageForSelection: () => void;
-  onAlignSelection: (mode: InspectorAlignMode) => void;
+  onReplaceImageLocal?: () => void;
+  onFlipSelection?: (axis: 'x' | 'y') => void;
+  onAlignSelection: (mode: InspectorAlignMode, scope?: 'selection' | 'canvas') => void;
   onDistributeSelection: (axis: 'h' | 'v') => void;
   onBulkScale: (factor: number) => void;
   onBulkRotate: (deltaDeg: number) => void;
@@ -322,12 +607,28 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   selectedElements,
   adjBg,
   aspectLinked,
+  extractedPalette = [],
+  alignScope = 'selection',
+  hasStyleClipboard = false,
+  onChangeAlignScope,
   onToggleAspectLink,
   onToggleAdjBg,
   onMutateBg,
   onResetBgTransform,
   onMutateSelected,
+  onBatchColor,
+  onBatchAlpha,
+  onBatchFont,
+  onBatchFontSize,
+  onBatchRadius,
+  onCopyStyle,
+  onPasteStyle,
+  onSaveAsAsset,
+  onReplaceBgImage,
+  onUploadBgLocal,
   onReplaceImageForSelection,
+  onReplaceImageLocal,
+  onFlipSelection,
   onAlignSelection,
   onDistributeSelection,
   onBulkScale,
@@ -467,64 +768,100 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
         </button>
       </div>
 
-      {/* Top Layer Action Bar + Layer Position Button (Reference Image 5) */}
+      {/* Top Layer Action Bar + Layer Position Button */}
       {!showBg && primarySelected && (
-        <div ref={popoverRef} className="relative shrink-0 border-b border-[#E6E4F2] bg-[#FAF9FE] px-3 py-2">
-          <div className="flex items-center justify-between gap-1">
-            <div className="flex items-center gap-1">
+        <div ref={popoverRef} className="relative shrink-0 border-b border-[#E6E4F2] bg-[#FAF9FE] px-2.5 py-2">
+          <div className="flex items-center justify-between gap-0.5">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => setLayerPosOpen((o) => !o)}
                 title="图层位置与顺序"
                 aria-label="图层位置与顺序"
-                className={`flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all ${
                   layerPosOpen
                     ? 'border-[#5E45F8] bg-[#EFEBFD] text-[#5E45F8] shadow-2xs'
                     : 'border-[#E6E4F2] bg-white text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8]'
                 }`}
               >
-                <Layers className="h-4 w-4" />
+                <Layers className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => onToggleLock(selectedElements.map((e) => e.id))}
                 title={singleLocked ? '解锁图层' : '锁定图层'}
                 aria-label={singleLocked ? '解锁图层' : '锁定图层'}
-                className={`flex h-8 w-8 items-center justify-center rounded-xl border transition-colors ${
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${
                   singleLocked
                     ? 'border-amber-300 bg-amber-50 text-amber-600'
                     : 'border-transparent bg-transparent text-[#56526B] hover:bg-white hover:text-[#5E45F8]'
                 }`}
               >
-                {singleLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                {singleLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
               </button>
               <button
                 type="button"
                 onClick={() => onToggleHide(selectedElements.map((e) => e.id))}
                 title={singleHidden ? '显示图层' : '隐藏图层'}
                 aria-label={singleHidden ? '显示图层' : '隐藏图层'}
-                className="flex h-8 w-8 items-center justify-center rounded-xl text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
               >
-                {singleHidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {singleHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
               <button
                 type="button"
                 onClick={onDuplicateSelection}
                 title="创建副本 (Ctrl+D)"
                 aria-label="创建副本"
-                className="flex h-8 w-8 items-center justify-center rounded-xl text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-3.5 w-3.5" />
               </button>
               {single && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onRenameLayer(single.id)}
+                    title="重命名图层"
+                    aria-label="重命名图层"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
+                  {onCopyStyle && (
+                    <button
+                      type="button"
+                      onClick={onCopyStyle}
+                      title="复制样式（跨主题持久生效）"
+                      aria-label="复制样式"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                    >
+                      <Paintbrush className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
+              {onPasteStyle && (
                 <button
                   type="button"
-                  onClick={() => onRenameLayer(single.id)}
-                  title="重命名图层"
-                  aria-label="重命名图层"
-                  className="flex h-8 w-8 items-center justify-center rounded-xl text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                  disabled={!hasStyleClipboard || singleLocked}
+                  onClick={onPasteStyle}
+                  title={hasStyleClipboard ? '粘贴样式到当前选中图层' : '暂无已复制样式'}
+                  aria-label="粘贴样式"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
                 >
-                  <Edit3 className="h-4 w-4" />
+                  <ClipboardPaste className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {onSaveAsAsset && (
+                <button
+                  type="button"
+                  onClick={onSaveAsAsset}
+                  title="存为我的素材预设"
+                  aria-label="存为我的素材预设"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                >
+                  <BookmarkPlus className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
@@ -535,9 +872,9 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
               onClick={onDeleteSelection}
               title="删除图层 (Del)"
               aria-label="删除图层"
-              className="flex h-8 w-8 items-center justify-center rounded-xl text-red-500 hover:bg-red-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-40"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
 
@@ -561,7 +898,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 <button
                   type="button"
                   disabled={singleLocked}
-                  onClick={() => onAlignSelection('hc')}
+                  onClick={() => onAlignSelection('hc', 'canvas')}
                   className="rounded-xl border border-[#E6E4F2] bg-[#F5F4FA] py-2 text-[12px] font-semibold text-[#1A172B] transition-colors hover:border-[#5E45F8] hover:bg-[#EFEBFD] hover:text-[#5E45F8] disabled:opacity-40"
                 >
                   水平居中
@@ -569,7 +906,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 <button
                   type="button"
                   disabled={singleLocked}
-                  onClick={() => onAlignSelection('vc')}
+                  onClick={() => onAlignSelection('vc', 'canvas')}
                   className="rounded-xl border border-[#E6E4F2] bg-[#F5F4FA] py-2 text-[12px] font-semibold text-[#1A172B] transition-colors hover:border-[#5E45F8] hover:bg-[#EFEBFD] hover:text-[#5E45F8] disabled:opacity-40"
                 >
                   垂直居中
@@ -592,7 +929,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                       type="button"
                       disabled={singleLocked}
                       title={`画布对齐：${pt.toUpperCase()}`}
-                      onClick={() => onAlignSelection(pt)}
+                      onClick={() => onAlignSelection(pt, 'canvas')}
                       className={`flex h-6 w-6 items-center justify-center rounded-full transition-all disabled:opacity-40 ${
                         isCardinal
                           ? 'opacity-100'
@@ -810,6 +1147,37 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                   />
                 </div>
               )}
+              {project.bg.kind === 'image' && (
+                <div className="space-y-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-[#56526B]">壁纸图片源</span>
+                    <span className="truncate max-w-[140px] text-[10.5px] text-[#7D7893]">
+                      {project.bg.url ? '已配置背景图' : '暂未选图'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {onUploadBgLocal && (
+                      <button
+                        type="button"
+                        onClick={onUploadBgLocal}
+                        className="flex items-center justify-center gap-1 rounded-lg border border-[#D9D2FF] bg-[#EFEBFD] py-1.5 text-[11px] font-semibold text-[#5E45F8] hover:bg-[#5E45F8] hover:text-white"
+                      >
+                        <Upload className="h-3 w-3" />
+                        <span>本地上传</span>
+                      </button>
+                    )}
+                    {onReplaceBgImage && (
+                      <button
+                        type="button"
+                        onClick={onReplaceBgImage}
+                        className="flex items-center justify-center gap-1 rounded-lg border border-[#E6E4F2] bg-white py-1.5 text-[11px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8]"
+                      >
+                        <span>壁纸库选图</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2.5 border-t border-[#E6E4F2] pt-3">
@@ -835,6 +1203,45 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 displayValue={`${project.bg.blur}px`}
                 onChange={(val) => onMutateBg((b) => ({ ...b, blur: val }))}
               />
+
+              <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#56526B]">背景调色</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onMutateBg((b) => ({ ...b, brightness: 100, contrast: 100, saturate: 100 }))
+                    }
+                    className="text-[10.5px] font-semibold text-[#5E45F8] hover:underline"
+                  >
+                    重置调色
+                  </button>
+                </div>
+                <InlineSlider
+                  label="亮度"
+                  min={50}
+                  max={150}
+                  value={project.bg.brightness ?? 100}
+                  displayValue={`${project.bg.brightness ?? 100}%`}
+                  onChange={(val) => onMutateBg((b) => ({ ...b, brightness: val }))}
+                />
+                <InlineSlider
+                  label="对比度"
+                  min={50}
+                  max={150}
+                  value={project.bg.contrast ?? 100}
+                  displayValue={`${project.bg.contrast ?? 100}%`}
+                  onChange={(val) => onMutateBg((b) => ({ ...b, contrast: val }))}
+                />
+                <InlineSlider
+                  label="饱和度"
+                  min={0}
+                  max={200}
+                  value={project.bg.saturate ?? 100}
+                  displayValue={`${project.bg.saturate ?? 100}%`}
+                  onChange={(val) => onMutateBg((b) => ({ ...b, saturate: val }))}
+                />
+              </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-medium text-[#56526B]">填充方式</span>
@@ -937,8 +1344,34 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
 
             {/* Alignment & Even Distribution */}
             <div className="space-y-2 border-t border-[#E6E4F2] pt-3">
-              <div className="text-[11px] font-bold tracking-wider text-[#6B6880]">
-                画布对齐与等距分布
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold tracking-wider text-[#6B6880]">
+                  对齐与等距分布
+                </span>
+                <div className="flex rounded-lg border border-[#E6E4F2] bg-[#F5F4FA] p-0.5 text-[10.5px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => onChangeAlignScope?.('selection')}
+                    className={`rounded-md px-2 py-0.5 transition-colors whitespace-nowrap ${
+                      alignScope === 'selection'
+                        ? 'bg-white text-[#5E45F8] shadow-xs'
+                        : 'text-[#6B6880] hover:text-[#1A172B]'
+                    }`}
+                  >
+                    对齐选区
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeAlignScope?.('canvas')}
+                    className={`rounded-md px-2 py-0.5 transition-colors whitespace-nowrap ${
+                      alignScope === 'canvas'
+                        ? 'bg-white text-[#5E45F8] shadow-xs'
+                        : 'text-[#6B6880] hover:text-[#1A172B]'
+                    }`}
+                  >
+                    对齐画布
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-6 gap-1">
                 {[
@@ -952,8 +1385,8 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                   <button
                     key={k}
                     type="button"
-                    title={label}
-                    onClick={() => onAlignSelection(k)}
+                    title={`${label}（${alignScope === 'selection' ? '互相对齐' : '相对画布'}）`}
+                    onClick={() => onAlignSelection(k, alignScope)}
                     className="flex h-7 items-center justify-center rounded-lg border border-[#E6E4F2] bg-white text-[#56526B] hover:border-[#5E45F8] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
                   >
                     <Icon className="h-3.5 w-3.5" />
@@ -979,6 +1412,155 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Batch Color & Alpha */}
+            {(() => {
+              const avgAlphaPct = Math.round(
+                (selectedElements.reduce((sum, e) => sum + e.alpha, 0) /
+                  Math.max(1, selectedElements.length)) *
+                  100
+              );
+              const firstColored = selectedElements.find(
+                (e) => e.kind !== 'image' && e.kind !== 'video'
+              );
+              const batchHex =
+                firstColored?.kind === 'widget' || firstColored?.kind === 'plugin'
+                  ? firstColored.accentColor
+                  : firstColored?.color || '#FFFFFF';
+              return (
+                <div className="space-y-2 border-t border-[#E6E4F2] pt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold tracking-wider text-[#6B6880]">
+                      批量改色与透明度
+                    </span>
+                    <span className="font-mono-tabular text-[10.5px] text-[#6B6880]">
+                      {batchHex.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <input
+                      type="color"
+                      value={batchHex}
+                      aria-label="批量统一修改颜色"
+                      onChange={(e) => onBatchColor?.(e.target.value)}
+                      className="h-6 w-8 cursor-pointer rounded-md border border-[#E6E4F2]"
+                    />
+                    {QUICK_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        title={`批量改色 ${c}`}
+                        onClick={() => onBatchColor?.(c)}
+                        className="h-5 w-5 rounded-full border border-[#DAD6F0] transition-transform hover:scale-110"
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                  {extractedPalette.length > 0 && (
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5">
+                      <span className="shrink-0 text-[10.5px] font-semibold text-[#5E45F8]">
+                        背景推荐色
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {extractedPalette.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            title={`应用背景推荐色 ${c}`}
+                            onClick={() => onBatchColor?.(c)}
+                            className="h-4.5 w-4.5 rounded-full border border-white shadow-xs transition-transform hover:scale-110"
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <InlineSlider
+                    label="批量透明"
+                    min={10}
+                    max={100}
+                    step={1}
+                    value={avgAlphaPct}
+                    displayValue={`${avgAlphaPct}%`}
+                    onChange={(val) => onBatchAlpha?.(val / 100)}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* Batch Typography & Radius for compatible multi-selection */}
+            {(() => {
+              const typoEls = selectedElements.filter(
+                (e) =>
+                  e.kind === 'text' ||
+                  e.kind === 'date' ||
+                  (e.kind === 'clock' && (e as ClockElement).style !== 'analog')
+              );
+              const radiusEls = selectedElements.filter(
+                (e) =>
+                  e.kind === 'image' ||
+                  e.kind === 'video' ||
+                  (e.kind === 'shape' && ((e as ShapeElement).sh || 'rect') === 'rect')
+              );
+              if (typoEls.length === 0 && radiusEls.length === 0) return null;
+
+              const avgSizePx =
+                typoEls.length > 0
+                  ? Math.round(
+                      ((typoEls.reduce((s, e) => s + e.size, 0) / typoEls.length) * minDim) / 100
+                    )
+                  : 24;
+              const commonFont = typoEls[0]?.font || '';
+              const avgRadius =
+                radiusEls.length > 0
+                  ? Math.round(
+                      radiusEls.reduce(
+                        (s, e) => s + ((e as ImageElement | VideoElement | ShapeElement).radius ?? 0),
+                        0
+                      ) / radiusEls.length
+                    )
+                  : 0;
+
+              return (
+                <div className="space-y-2 border-t border-[#E6E4F2] pt-3">
+                  <div className="text-[11px] font-bold tracking-wider text-[#6B6880]">
+                    批量排版与圆角
+                  </div>
+                  {typoEls.length > 0 && (
+                    <>
+                      <div>
+                        <span className="text-[11px] text-[#56526B]">
+                          统一字体 ({typoEls.length} 项文本)
+                        </span>
+                        <VisualFontSelect
+                          value={commonFont}
+                          ariaLabel="批量统一字体"
+                          onChange={(fId) => onBatchFont?.(fId)}
+                        />
+                      </div>
+                      <InlineSlider
+                        label="统一字号"
+                        min={12}
+                        max={Math.round(minDim * 1.2)}
+                        value={avgSizePx}
+                        displayValue={`${avgSizePx}`}
+                        onChange={(px) => onBatchFontSize?.(+((px * 100) / minDim).toFixed(1))}
+                      />
+                    </>
+                  )}
+                  {radiusEls.length > 0 && (
+                    <InlineSlider
+                      label="统一圆角"
+                      min={0}
+                      max={30}
+                      value={avgRadius}
+                      displayValue={String(avgRadius)}
+                      onChange={(r) => onBatchRadius?.(r)}
+                    />
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Bulk Transform */}
             <div className="space-y-2 border-t border-[#E6E4F2] pt-3">
@@ -1013,6 +1595,32 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                   className="flex items-center justify-center gap-0.5 rounded-lg border border-[#E6E4F2] py-1 font-mono-tabular text-[11px] font-semibold text-[#56526B] hover:border-[#5E45F8] hover:text-[#5E45F8]"
                 >
                   <RotateCw className="h-3 w-3" /> 15°
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFlipSelection
+                      ? onFlipSelection('x')
+                      : onMutateSelected((el) => ({ ...el, sx: (el.sx ?? 1) * -1 }))
+                  }
+                  className="flex items-center justify-center gap-1 rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] py-1 text-[11px] font-semibold text-[#56526B] hover:border-[#5E45F8] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                >
+                  <FlipHorizontal2 className="h-3.5 w-3.5" />
+                  <span>水平翻转</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFlipSelection
+                      ? onFlipSelection('y')
+                      : onMutateSelected((el) => ({ ...el, sy: (el.sy ?? 1) * -1 }))
+                  }
+                  className="flex items-center justify-center gap-1 rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] py-1 text-[11px] font-semibold text-[#56526B] hover:border-[#5E45F8] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+                >
+                  <FlipVertical2 className="h-3.5 w-3.5" />
+                  <span>垂直翻转</span>
                 </button>
               </div>
               <div className="grid grid-cols-4 gap-1">
@@ -1178,6 +1786,43 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           }
                         />
                       </label>
+                      <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-[#56526B]">秒针 / 点缀色</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono-tabular text-[10.5px] text-[#6B6880]">
+                              {((single as ClockElement).accent || '#ff6a4d').toUpperCase()}
+                            </span>
+                            <input
+                              type="color"
+                              value={(single as ClockElement).accent || '#ff6a4d'}
+                              aria-label="模拟时钟点缀色"
+                              onChange={(e) =>
+                                onMutateSelected((el) => ({ ...el, accent: e.target.value } as EditorElement))
+                              }
+                              className="h-6 w-8 cursor-pointer rounded border border-[#E6E4F2]"
+                            />
+                          </div>
+                        </div>
+                        {extractedPalette.length > 0 && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold text-[#5E45F8]">背景推荐色</span>
+                            <div className="flex items-center gap-1">
+                              {extractedPalette.map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() =>
+                                    onMutateSelected((el) => ({ ...el, accent: c } as EditorElement))
+                                  }
+                                  className="h-4 w-4 rounded-full border border-white shadow-xs"
+                                  style={{ backgroundColor: c }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <>
@@ -1287,17 +1932,28 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 const imgEl = single as ImageElement;
                 return (
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span className="text-[11px] font-bold tracking-wider text-[#6B6880]">
                         图片设置与裁切
                       </span>
-                      <button
-                        type="button"
-                        onClick={onReplaceImageForSelection}
-                        className="rounded-lg border border-[#D9D2FF] bg-[#EFEBFD] px-2.5 py-0.5 text-[11px] font-semibold text-[#5E45F8] hover:bg-[#5E45F8] hover:text-white"
-                      >
-                        更换图片…
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {onReplaceImageLocal && (
+                          <button
+                            type="button"
+                            onClick={onReplaceImageLocal}
+                            className="rounded-lg border border-[#D9D2FF] bg-[#EFEBFD] px-2 py-0.5 text-[11px] font-semibold text-[#5E45F8] hover:bg-[#5E45F8] hover:text-white"
+                          >
+                            本地替换
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={onReplaceImageForSelection}
+                          className="rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2 py-0.5 text-[11px] font-semibold text-[#56526B] hover:border-[#5E45F8] hover:text-[#5E45F8]"
+                        >
+                          素材库
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between">
@@ -1453,6 +2109,101 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                         }
                       />
                     </div>
+
+                    {/* Image Edge Feathering Mask */}
+                    <div className="space-y-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-[#56526B]">边缘羽化遮罩</span>
+                        {imgEl.feather && imgEl.feather.strength > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onMutateSelected((el) => ({ ...el, feather: undefined } as EditorElement))
+                            }
+                            className="text-[10.5px] font-semibold text-[#5E45F8] hover:underline"
+                          >
+                            关闭羽化
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-4 gap-1 text-[10.5px] font-semibold">
+                        {(
+                          [
+                            { id: 'off' as const, label: '关闭' },
+                            { id: 'all' as const, label: '四周' },
+                            { id: 'left' as const, label: '左侧' },
+                            { id: 'right' as const, label: '右侧' },
+                            { id: 'top' as const, label: '顶部' },
+                            { id: 'bottom' as const, label: '底部' },
+                            { id: 'horizontal' as const, label: '左右' },
+                            { id: 'vertical' as const, label: '上下' },
+                          ] as const
+                        ).map((opt) => {
+                          const isActive =
+                            opt.id === 'off'
+                              ? !imgEl.feather || imgEl.feather.strength <= 0
+                              : imgEl.feather?.mode === opt.id && imgEl.feather.strength > 0;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => {
+                                  if (opt.id === 'off') {
+                                    return { ...el, feather: undefined } as EditorElement;
+                                  }
+                                  const prevStrength = (el as ImageElement).feather?.strength;
+                                  return {
+                                    ...el,
+                                    feather: {
+                                      mode: opt.id as ImageFeatherMode,
+                                      strength: prevStrength && prevStrength > 0 ? prevStrength : 24,
+                                    },
+                                  } as EditorElement;
+                                })
+                              }
+                              className={`rounded-lg border py-1 transition-colors whitespace-nowrap ${
+                                isActive
+                                  ? 'border-[#5E45F8] bg-[#EFEBFD] text-[#5E45F8]'
+                                  : 'border-[#E6E4F2] bg-white text-[#6B6880] hover:border-[#C5BDF5] hover:text-[#1A172B]'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {imgEl.feather && imgEl.feather.strength > 0 && (
+                        <InlineSlider
+                          label="羽化范围"
+                          min={4}
+                          max={55}
+                          step={1}
+                          value={imgEl.feather.strength}
+                          displayValue={`${imgEl.feather.strength}%`}
+                          onChange={(val) =>
+                            onMutateSelected((el) => {
+                              const cur = el as ImageElement;
+                              return {
+                                ...cur,
+                                feather: {
+                                  mode: cur.feather?.mode ?? 'all',
+                                  strength: val,
+                                },
+                              } as EditorElement;
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+
+                    <ShadowControls
+                      shadow={imgEl.shadow}
+                      extractedPalette={extractedPalette}
+                      onChange={(nextShadow) =>
+                        onMutateSelected((el) => ({ ...el, shadow: nextShadow } as EditorElement))
+                      }
+                    />
                   </div>
                 );
               })()}
@@ -1524,6 +2275,201 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                         onMutateSelected((el) => ({ ...el, blur: val } as EditorElement))
                       }
                     />
+
+                    <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-[#56526B]">框内缩放裁切</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onMutateSelected((el) => ({
+                              ...el,
+                              cropScale: 1,
+                              cropX: 0,
+                              cropY: 0,
+                            } as EditorElement))
+                          }
+                          className="text-[10.5px] font-semibold text-[#5E45F8] hover:underline"
+                        >
+                          重置裁切
+                        </button>
+                      </div>
+                      <InlineSlider
+                        label="放大倍率"
+                        min={100}
+                        max={250}
+                        step={5}
+                        value={Math.round((vidEl.cropScale ?? 1) * 100)}
+                        displayValue={`${Math.round((vidEl.cropScale ?? 1) * 100)}%`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, cropScale: val / 100 } as EditorElement))
+                        }
+                      />
+                      <InlineSlider
+                        label="水平偏移"
+                        min={-40}
+                        max={40}
+                        value={vidEl.cropX ?? 0}
+                        displayValue={`${vidEl.cropX ?? 0}%`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, cropX: val } as EditorElement))
+                        }
+                      />
+                      <InlineSlider
+                        label="垂直偏移"
+                        min={-40}
+                        max={40}
+                        value={vidEl.cropY ?? 0}
+                        displayValue={`${vidEl.cropY ?? 0}%`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, cropY: val } as EditorElement))
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-[#56526B]">画面调色</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onMutateSelected((el) => ({
+                              ...el,
+                              brightness: 100,
+                              contrast: 100,
+                              saturate: 100,
+                            } as EditorElement))
+                          }
+                          className="text-[10.5px] font-semibold text-[#5E45F8] hover:underline"
+                        >
+                          重置调色
+                        </button>
+                      </div>
+                      <InlineSlider
+                        label="亮度"
+                        min={50}
+                        max={150}
+                        value={vidEl.brightness ?? 100}
+                        displayValue={`${vidEl.brightness ?? 100}%`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, brightness: val } as EditorElement))
+                        }
+                      />
+                      <InlineSlider
+                        label="对比度"
+                        min={50}
+                        max={150}
+                        value={vidEl.contrast ?? 100}
+                        displayValue={`${vidEl.contrast ?? 100}%`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, contrast: val } as EditorElement))
+                        }
+                      />
+                      <InlineSlider
+                        label="饱和度"
+                        min={0}
+                        max={200}
+                        value={vidEl.saturate ?? 100}
+                        displayValue={`${vidEl.saturate ?? 100}%`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, saturate: val } as EditorElement))
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-[#56526B]">边缘羽化遮罩</span>
+                        {vidEl.feather && vidEl.feather.strength > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onMutateSelected((el) => ({ ...el, feather: undefined } as EditorElement))
+                            }
+                            className="text-[10.5px] font-semibold text-[#5E45F8] hover:underline"
+                          >
+                            关闭羽化
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-4 gap-1 text-[10.5px] font-semibold">
+                        {(
+                          [
+                            { id: 'off' as const, label: '关闭' },
+                            { id: 'all' as const, label: '四周' },
+                            { id: 'left' as const, label: '左侧' },
+                            { id: 'right' as const, label: '右侧' },
+                            { id: 'top' as const, label: '顶部' },
+                            { id: 'bottom' as const, label: '底部' },
+                            { id: 'horizontal' as const, label: '左右' },
+                            { id: 'vertical' as const, label: '上下' },
+                          ] as const
+                        ).map((opt) => {
+                          const isActive =
+                            opt.id === 'off'
+                              ? !vidEl.feather || vidEl.feather.strength <= 0
+                              : vidEl.feather?.mode === opt.id && vidEl.feather.strength > 0;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => {
+                                  if (opt.id === 'off') {
+                                    return { ...el, feather: undefined } as EditorElement;
+                                  }
+                                  const prevStrength = (el as VideoElement).feather?.strength;
+                                  return {
+                                    ...el,
+                                    feather: {
+                                      mode: opt.id as ImageFeatherMode,
+                                      strength: prevStrength && prevStrength > 0 ? prevStrength : 24,
+                                    },
+                                  } as EditorElement;
+                                })
+                              }
+                              className={`rounded-lg border py-1 transition-colors whitespace-nowrap ${
+                                isActive
+                                  ? 'border-[#5E45F8] bg-[#EFEBFD] text-[#5E45F8]'
+                                  : 'border-[#E6E4F2] bg-white text-[#6B6880] hover:border-[#C5BDF5] hover:text-[#1A172B]'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {vidEl.feather && vidEl.feather.strength > 0 && (
+                        <InlineSlider
+                          label="羽化范围"
+                          min={4}
+                          max={55}
+                          step={1}
+                          value={vidEl.feather.strength}
+                          displayValue={`${vidEl.feather.strength}%`}
+                          onChange={(val) =>
+                            onMutateSelected((el) => {
+                              const cur = el as VideoElement;
+                              return {
+                                ...cur,
+                                feather: {
+                                  mode: cur.feather?.mode ?? 'all',
+                                  strength: val,
+                                },
+                              } as EditorElement;
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+
+                    <ShadowControls
+                      shadow={vidEl.shadow}
+                      extractedPalette={extractedPalette}
+                      onChange={(nextShadow) =>
+                        onMutateSelected((el) => ({ ...el, shadow: nextShadow } as EditorElement))
+                      }
+                    />
                   </div>
                 );
               })()}
@@ -1533,6 +2479,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 const sh = shapeEl.sh || 'rect';
                 const supportsStroke =
                   sh === 'rect' || sh === 'circle' || sh === 'ring' || sh === 'brackets' || sh === 'dotline';
+                const supportsFillEffects = sh === 'rect' || sh === 'circle';
                 return (
                   <div className="space-y-2.5">
                     <div className="text-[11px] font-bold tracking-wider text-[#6B6880]">
@@ -1565,6 +2512,107 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           onMutateSelected((el) => ({ ...el, radius: val } as EditorElement))
                         }
                       />
+                    )}
+                    {supportsFillEffects && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-[#56526B]">填充模式</span>
+                          <div className="flex rounded-lg border border-[#E6E4F2] bg-[#F5F4FA] p-0.5 text-[11px] font-semibold">
+                            {(
+                              [
+                                { id: 'solid', label: '纯色填充' },
+                                { id: 'gradient', label: '双色渐变' },
+                              ] as const
+                            ).map((mode) => (
+                              <button
+                                key={mode.id}
+                                type="button"
+                                onClick={() =>
+                                  onMutateSelected((el) => ({
+                                    ...el,
+                                    fillMode: mode.id,
+                                    ...(mode.id === 'gradient' && !(el as ShapeElement).color2
+                                      ? { color2: '#38BDF8', gradAngle: 135 }
+                                      : {}),
+                                  } as EditorElement))
+                                }
+                                className={`rounded-md px-2 py-0.5 transition-colors ${
+                                  (shapeEl.fillMode || 'solid') === mode.id
+                                    ? 'bg-white text-[#5E45F8] shadow-xs'
+                                    : 'text-[#6B6880]'
+                                }`}
+                              >
+                                {mode.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {shapeEl.fillMode === 'gradient' && (
+                          <div className="space-y-2 rounded-xl border border-[#D9D2FF] bg-[#EFEBFD]/55 p-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-[#4D34E6]">渐变终点色</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono-tabular text-[10.5px] text-[#4D34E6]">
+                                  {(shapeEl.color2 || '#38BDF8').toUpperCase()}
+                                </span>
+                                <input
+                                  type="color"
+                                  value={shapeEl.color2 || '#38BDF8'}
+                                  aria-label="形状渐变终点色"
+                                  onChange={(e) =>
+                                    onMutateSelected((el) => ({
+                                      ...el,
+                                      color2: e.target.value,
+                                    } as EditorElement))
+                                  }
+                                  className="h-6 w-8 cursor-pointer rounded border border-[#D9D2FF]"
+                                />
+                              </div>
+                            </div>
+                            {extractedPalette.length > 0 && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-semibold text-[#5E45F8]">推荐终点色</span>
+                                <div className="flex items-center gap-1">
+                                  {extractedPalette.map((c) => (
+                                    <button
+                                      key={c}
+                                      type="button"
+                                      onClick={() =>
+                                        onMutateSelected((el) => ({ ...el, color2: c } as EditorElement))
+                                      }
+                                      className="h-4 w-4 rounded-full border border-white shadow-xs"
+                                      style={{ backgroundColor: c }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <InlineSlider
+                              label="渐变角度"
+                              min={0}
+                              max={360}
+                              value={shapeEl.gradAngle ?? 135}
+                              displayValue={`${shapeEl.gradAngle ?? 135}°`}
+                              onChange={(val) =>
+                                onMutateSelected((el) => ({ ...el, gradAngle: val } as EditorElement))
+                              }
+                            />
+                          </div>
+                        )}
+
+                        <InlineSlider
+                          label="背景毛玻璃"
+                          min={0}
+                          max={24}
+                          step={1}
+                          value={shapeEl.backdropBlur ?? 0}
+                          displayValue={`${shapeEl.backdropBlur ?? 0}px`}
+                          onChange={(val) =>
+                            onMutateSelected((el) => ({ ...el, backdropBlur: val } as EditorElement))
+                          }
+                        />
+                      </>
                     )}
                     {supportsStroke && (
                       <>
@@ -1608,6 +2656,13 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                         )}
                       </>
                     )}
+                    <ShadowControls
+                      shadow={shapeEl.shadow}
+                      extractedPalette={extractedPalette}
+                      onChange={(nextShadow) =>
+                        onMutateSelected((el) => ({ ...el, shadow: nextShadow } as EditorElement))
+                      }
+                    />
                   </div>
                 );
               })()}
@@ -1670,6 +2725,35 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                       }
                     />
                   )}
+                  {(single as WidgetElement).widgetType === 'countdown' && (
+                    <div>
+                      <label className="text-[11px] text-[#56526B]">目标倒计时文案</label>
+                      <input
+                        type="text"
+                        value={(single as WidgetElement).targetLabel || '12 天'}
+                        onChange={(e) =>
+                          onMutateSelected((el) => ({
+                            ...el,
+                            targetLabel: e.target.value,
+                          } as EditorElement))
+                        }
+                        className="mt-1 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'audio-spectrum' && (
+                    <InlineSlider
+                      label="频谱柱数"
+                      min={8}
+                      max={24}
+                      step={2}
+                      value={(single as WidgetElement).barCount ?? 16}
+                      displayValue={`${(single as WidgetElement).barCount ?? 16} 根`}
+                      onChange={(val) =>
+                        onMutateSelected((el) => ({ ...el, barCount: val } as EditorElement))
+                      }
+                    />
+                  )}
                   {(single as WidgetElement).widgetType === 'weather' && (
                     <div>
                       <label className="text-[11px] text-[#56526B]">城市名称</label>
@@ -1683,16 +2767,42 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                       />
                     </div>
                   )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-[#56526B]">主题色</span>
-                    <input
-                      type="color"
-                      value={(single as WidgetElement).accentColor}
-                      onChange={(e) =>
-                        onMutateSelected((el) => ({ ...el, accentColor: e.target.value } as EditorElement))
-                      }
-                      className="h-7 w-10 cursor-pointer rounded-lg border border-[#E6E4F2]"
-                    />
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-[#56526B]">主题色</span>
+                      <input
+                        type="color"
+                        value={(single as WidgetElement).accentColor}
+                        onChange={(e) =>
+                          onMutateSelected((el) => ({ ...el, accentColor: e.target.value } as EditorElement))
+                        }
+                        className="h-7 w-10 cursor-pointer rounded-lg border border-[#E6E4F2]"
+                      />
+                    </div>
+                    {extractedPalette.length > 0 && (
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5">
+                        <span className="shrink-0 text-[10.5px] font-semibold text-[#5E45F8]">
+                          背景推荐色
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {extractedPalette.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => ({ ...el, accentColor: c } as EditorElement))
+                              }
+                              className={`h-4.5 w-4.5 rounded-full border ${
+                                (single as WidgetElement).accentColor.toLowerCase() === c.toLowerCase()
+                                  ? 'border-[#5E45F8] ring-2 ring-[#5E45F8]/30'
+                                  : 'border-white shadow-xs'
+                              }`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <InlineSlider
                     label="卡片底色"
@@ -1704,41 +2814,177 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                       onMutateSelected((el) => ({ ...el, bgOpacity: val } as EditorElement))
                     }
                   />
+                  <ShadowControls
+                    shadow={(single as WidgetElement).shadow}
+                    extractedPalette={extractedPalette}
+                    onChange={(nextShadow) =>
+                      onMutateSelected((el) => ({ ...el, shadow: nextShadow } as EditorElement))
+                    }
+                  />
                 </div>
               )}
 
               {single.kind === 'plugin' && (
                 <div className="space-y-2.5">
                   <div className="text-[11px] font-bold tracking-wider text-[#6B6880]">
-                    插件声明式配置 · v{(single as PluginElement).pluginVersion}
+                    插件参数配置 · v{(single as PluginElement).pluginVersion}
                   </div>
-                  {Object.entries((single as PluginElement).config).map(([k, val]) => (
-                    <div key={k}>
-                      <label className="text-[11px] text-[#56526B]">{k}</label>
+                  {Object.entries((single as PluginElement).config).map(([k, val]) => {
+                    const meta = PLUGIN_CONFIG_FIELD_META[k];
+                    const label = meta?.label ?? k;
+                    if (meta?.type === 'boolean' || typeof val === 'boolean') {
+                      return (
+                        <label
+                          key={k}
+                          className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px]"
+                        >
+                          <span className="text-[#56526B]">{label}</span>
+                          <input
+                            type="checkbox"
+                            className="accent-[#5E45F8]"
+                            checked={Boolean(val)}
+                            onChange={(e) =>
+                              onMutateSelected((el) => {
+                                const pe = el as PluginElement;
+                                return { ...pe, config: { ...pe.config, [k]: e.target.checked } };
+                              })
+                            }
+                          />
+                        </label>
+                      );
+                    }
+                    if (meta?.type === 'number') {
+                      const numVal = Number(val) || meta.min;
+                      return (
+                        <InlineSlider
+                          key={k}
+                          label={label}
+                          min={meta.min}
+                          max={meta.max}
+                          step={meta.step ?? 1}
+                          value={numVal}
+                          displayValue={`${numVal}${meta.unit || ''}`}
+                          onChange={(nextNum) =>
+                            onMutateSelected((el) => {
+                              const pe = el as PluginElement;
+                              return { ...pe, config: { ...pe.config, [k]: nextNum } };
+                            })
+                          }
+                        />
+                      );
+                    }
+                    if (meta?.type === 'select') {
+                      return (
+                        <div key={k} className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-[#56526B]">{label}</span>
+                          <select
+                            value={String(val)}
+                            onChange={(e) =>
+                              onMutateSelected((el) => {
+                                const pe = el as PluginElement;
+                                return { ...pe, config: { ...pe.config, [k]: e.target.value } };
+                              })
+                            }
+                            className="rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px]"
+                          >
+                            {meta.options.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    }
+                    if (meta?.type === 'textarea') {
+                      return (
+                        <div key={k}>
+                          <label className="text-[11px] text-[#56526B]">{label}</label>
+                          <textarea
+                            rows={3}
+                            value={String(val)}
+                            onChange={(e) =>
+                              onMutateSelected((el) => {
+                                const pe = el as PluginElement;
+                                return { ...pe, config: { ...pe.config, [k]: e.target.value } };
+                              })
+                            }
+                            className="mt-1 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={k}>
+                        <label className="text-[11px] text-[#56526B]">{label}</label>
+                        <input
+                          type="text"
+                          value={String(val)}
+                          onChange={(e) =>
+                            onMutateSelected((el) => {
+                              const pe = el as PluginElement;
+                              return { ...pe, config: { ...pe.config, [k]: e.target.value } };
+                            })
+                          }
+                          className="mt-0.5 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                        />
+                      </div>
+                    );
+                  })}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-[#56526B]">强调色</span>
                       <input
-                        type="text"
-                        value={String(val)}
+                        type="color"
+                        value={(single as PluginElement).accentColor}
                         onChange={(e) =>
-                          onMutateSelected((el) => {
-                            const pe = el as PluginElement;
-                            return { ...pe, config: { ...pe.config, [k]: e.target.value } };
-                          })
+                          onMutateSelected((el) => ({ ...el, accentColor: e.target.value } as EditorElement))
                         }
-                        className="mt-0.5 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                        className="h-7 w-10 cursor-pointer rounded-lg border border-[#E6E4F2]"
                       />
                     </div>
-                  ))}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-[#56526B]">强调色</span>
-                    <input
-                      type="color"
-                      value={(single as PluginElement).accentColor}
-                      onChange={(e) =>
-                        onMutateSelected((el) => ({ ...el, accentColor: e.target.value } as EditorElement))
-                      }
-                      className="h-7 w-10 cursor-pointer rounded-lg border border-[#E6E4F2]"
-                    />
+                    {extractedPalette.length > 0 && (
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5">
+                        <span className="shrink-0 text-[10.5px] font-semibold text-[#5E45F8]">
+                          背景推荐色
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {extractedPalette.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => ({ ...el, accentColor: c } as EditorElement))
+                              }
+                              className={`h-4.5 w-4.5 rounded-full border ${
+                                (single as PluginElement).accentColor.toLowerCase() === c.toLowerCase()
+                                  ? 'border-[#5E45F8] ring-2 ring-[#5E45F8]/30'
+                                  : 'border-white shadow-xs'
+                              }`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
+                  <InlineSlider
+                    label="卡片底色"
+                    min={30}
+                    max={95}
+                    value={(single as PluginElement).bgOpacity ?? 80}
+                    displayValue={`${(single as PluginElement).bgOpacity ?? 80}%`}
+                    onChange={(val) =>
+                      onMutateSelected((el) => ({ ...el, bgOpacity: val } as EditorElement))
+                    }
+                  />
+                  <ShadowControls
+                    shadow={(single as PluginElement).shadow}
+                    extractedPalette={extractedPalette}
+                    onChange={(nextShadow) =>
+                      onMutateSelected((el) => ({ ...el, shadow: nextShadow } as EditorElement))
+                    }
+                  />
                 </div>
               )}
 
@@ -1754,19 +3000,12 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                       <>
                         <div>
                           <label className="text-[11px] text-[#56526B]">字体 (跨设备安全映射)</label>
-                          <select
+                          <VisualFontSelect
                             value={single.font || ''}
-                            onChange={(e) =>
-                              onMutateSelected((el) => ({ ...el, font: e.target.value }))
+                            onChange={(fontId) =>
+                              onMutateSelected((el) => ({ ...el, font: fontId }))
                             }
-                            className="mt-1 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px]"
-                          >
-                            {EDITOR_FONTS.map((f) => (
-                              <option key={f.id} value={f.id}>
-                                {f.label} ({f.license})
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </div>
 
                         <div className="flex items-center justify-between">
@@ -1811,7 +3050,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                             ...el,
                             fx: e.target.value as TextElement['fx'],
                             ...(e.target.value === 'gradient' && el.kind === 'text'
-                              ? { g1: el.g1 || '#A78BFA', g2: el.g2 || '#5E45F8' }
+                              ? { g1: el.g1 || '#A78BFA', g2: el.g2 || '#5E45F8', gAngle: el.gAngle ?? 120 }
                               : {}),
                           }))
                         }
@@ -1826,35 +3065,68 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                     </div>
 
                     {single.kind === 'text' && single.fx === 'gradient' && (
-                      <div className="flex items-center justify-between rounded-xl border border-[#D9D2FF] bg-[#EFEBFD]/55 px-2.5 py-2">
-                        <label className="flex items-center gap-1.5 text-[11px] font-medium text-[#4D34E6]">
-                          渐变起点
-                          <input
-                            type="color"
-                            value={(single as TextElement).g1 || '#A78BFA'}
-                            onChange={(e) =>
-                              onMutateSelected((el) => ({
-                                ...el,
-                                g1: e.target.value,
-                              } as EditorElement))
-                            }
-                            className="h-6 w-8 cursor-pointer rounded border border-[#D9D2FF]"
-                          />
-                        </label>
-                        <label className="flex items-center gap-1.5 text-[11px] font-medium text-[#4D34E6]">
-                          渐变终点
-                          <input
-                            type="color"
-                            value={(single as TextElement).g2 || '#5E45F8'}
-                            onChange={(e) =>
-                              onMutateSelected((el) => ({
-                                ...el,
-                                g2: e.target.value,
-                              } as EditorElement))
-                            }
-                            className="h-6 w-8 cursor-pointer rounded border border-[#D9D2FF]"
-                          />
-                        </label>
+                      <div className="space-y-2 rounded-xl border border-[#D9D2FF] bg-[#EFEBFD]/55 p-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-center gap-1.5 text-[11px] font-medium text-[#4D34E6]">
+                            渐变起点
+                            <input
+                              type="color"
+                              value={(single as TextElement).g1 || '#A78BFA'}
+                              onChange={(e) =>
+                                onMutateSelected((el) => ({
+                                  ...el,
+                                  g1: e.target.value,
+                                } as EditorElement))
+                              }
+                              className="h-6 w-8 cursor-pointer rounded border border-[#D9D2FF]"
+                            />
+                          </label>
+                          <label className="flex items-center gap-1.5 text-[11px] font-medium text-[#4D34E6]">
+                            渐变终点
+                            <input
+                              type="color"
+                              value={(single as TextElement).g2 || '#5E45F8'}
+                              onChange={(e) =>
+                                onMutateSelected((el) => ({
+                                  ...el,
+                                  g2: e.target.value,
+                                } as EditorElement))
+                              }
+                              className="h-6 w-8 cursor-pointer rounded border border-[#D9D2FF]"
+                            />
+                          </label>
+                        </div>
+                        <InlineSlider
+                          label="渐变方向"
+                          min={0}
+                          max={360}
+                          value={(single as TextElement).gAngle ?? 120}
+                          displayValue={`${(single as TextElement).gAngle ?? 120}°`}
+                          onChange={(val) =>
+                            onMutateSelected((el) => ({
+                              ...el,
+                              gAngle: val,
+                            } as EditorElement))
+                          }
+                        />
+                        <div className="grid grid-cols-5 gap-1">
+                          {[0, 45, 90, 120, 180].map((deg) => (
+                            <button
+                              key={deg}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => ({ ...el, gAngle: deg } as EditorElement))
+                              }
+                              className={`rounded-md border py-0.5 font-mono-tabular text-[10px] font-semibold ${
+                                ((single as TextElement).gAngle ?? 120) === deg
+                                  ? 'border-[#5E45F8] bg-white text-[#5E45F8]'
+                                  : 'border-[#D9D2FF] text-[#4D34E6] hover:bg-white/80'
+                              }`}
+                            >
+                              {deg}°
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -1901,6 +3173,29 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                         />
                       ))}
                     </div>
+                    {extractedPalette.length > 0 && (
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5">
+                        <span className="shrink-0 text-[10.5px] font-semibold text-[#5E45F8]">
+                          背景推荐色
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {extractedPalette.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              title={`使用背景推荐色 ${c}`}
+                              onClick={() => onMutateSelected((el) => ({ ...el, color: c }))}
+                              className={`h-4.5 w-4.5 rounded-full border ${
+                                single.color.toLowerCase() === c.toLowerCase()
+                                  ? 'border-[#5E45F8] ring-2 ring-[#5E45F8]/30'
+                                  : 'border-white shadow-xs'
+                              }`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2331,6 +3626,42 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                     onMutateSelected((el) => ({ ...el, rot: val }))
                   }
                 />
+
+                {/* Flip Horizontal / Vertical */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onFlipSelection
+                        ? onFlipSelection('x')
+                        : onMutateSelected((el) => ({ ...el, sx: (el.sx ?? 1) * -1 }))
+                    }
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border py-1.5 text-[11px] font-semibold transition-colors ${
+                      (single.sx ?? 1) < 0
+                        ? 'border-[#5E45F8] bg-[#EFEBFD] text-[#5E45F8]'
+                        : 'border-[#E6E4F2] bg-[#F8F7FC] text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8]'
+                    }`}
+                  >
+                    <FlipHorizontal2 className="h-3.5 w-3.5" />
+                    <span>水平翻转</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onFlipSelection
+                        ? onFlipSelection('y')
+                        : onMutateSelected((el) => ({ ...el, sy: (el.sy ?? 1) * -1 }))
+                    }
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border py-1.5 text-[11px] font-semibold transition-colors ${
+                      (single.sy ?? 1) < 0
+                        ? 'border-[#5E45F8] bg-[#EFEBFD] text-[#5E45F8]'
+                        : 'border-[#E6E4F2] bg-[#F8F7FC] text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8]'
+                    }`}
+                  >
+                    <FlipVertical2 className="h-3.5 w-3.5" />
+                    <span>垂直翻转</span>
+                  </button>
+                </div>
 
                 {/* 9-Anchor Grid */}
                 <div>

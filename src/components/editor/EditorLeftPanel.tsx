@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowUp,
   Camera,
+  ChevronDown,
   ChevronRight,
   Clock,
   Cloud,
@@ -13,7 +14,9 @@ import {
   Edit3,
   Eye,
   EyeOff,
+  Folder,
   FolderOpen,
+  GripVertical,
   Image as ImageIcon,
   Layers,
   Lock,
@@ -64,6 +67,7 @@ import {
   EditorThemeProject,
 } from '../../types/editor';
 import { EditorArtworkRenderer, getLayoutElements, isElementHidden } from './EditorArtworkRenderer';
+import { CustomAssetPreset } from '../../utils/editorStorage';
 
 const ASSET_CATS: AssetCategoryFilter[] = [
   '全部',
@@ -114,6 +118,9 @@ interface EditorLeftPanelProps {
   selectedIds: string[];
   themes: ThemeItem[];
   recentImports: { id: string; name: string; kind: 'image' | 'video'; src: string; w: number; h: number }[];
+  customAssets?: CustomAssetPreset[];
+  extractedPalette?: string[];
+  onDeleteCustomAsset?: (id: string) => void;
   onClose: () => void;
   onSwitchTab: (tab: EditorRailTab) => void;
   onInsertElements: (els: EditorElement[], label?: string) => void;
@@ -123,14 +130,18 @@ interface EditorLeftPanelProps {
   onOpenLibraryPicker: (mode: 'el' | 'bg') => void;
   onStartCapture: (mode: 'shot' | 'rec') => void;
   onSelectLayer: (id: string, multi: boolean) => void;
+  onSelectLayers?: (ids: string[]) => void;
   onSelectBgLayer: () => void;
   onToggleLock: (ids?: string[]) => void;
   onToggleHide: (ids?: string[]) => void;
   onReorderLayer: (op: 'top' | 'up' | 'down' | 'bottom', targetId?: string) => void;
+  onReorderElements: (orderedIdsBottomToTop: string[]) => void;
   onRenameLayer: (id: string) => void;
+  onCommitLayerName: (id: string, nextName: string) => void;
   onDuplicateSelection: () => void;
   onDeleteSelection: () => void;
   onToggleBgAdj: () => void;
+  onContextMenuLayer?: (e: React.MouseEvent, ids: string[]) => void;
   onNotify: (msg: string) => void;
 }
 
@@ -141,6 +152,9 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
   selectedIds,
   themes,
   recentImports,
+  customAssets = [],
+  extractedPalette = [],
+  onDeleteCustomAsset,
   onClose,
   onSwitchTab,
   onInsertElements,
@@ -150,14 +164,18 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
   onOpenLibraryPicker,
   onStartCapture,
   onSelectLayer,
+  onSelectLayers,
   onSelectBgLayer,
   onToggleLock,
   onToggleHide,
   onReorderLayer,
+  onReorderElements,
   onRenameLayer,
+  onCommitLayerName,
   onDuplicateSelection,
   onDeleteSelection,
   onToggleBgAdj,
+  onContextMenuLayer,
   onNotify,
 }) => {
   const layoutSize = project.layouts[layoutIndex]?.size ?? [1920, 462];
@@ -180,7 +198,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
   const [previewTarget, setPreviewTarget] = useState<TemplatePreviewTarget | null>(null);
 
   // Assets state
-  const [assetSource, setAssetSource] = useState<'builtin' | 'cloud'>('builtin');
+  const [assetSource, setAssetSource] = useState<'builtin' | 'mine' | 'cloud'>('builtin');
   const [assetCat, setAssetCat] = useState<AssetCategoryFilter>('全部');
   const [assetQuery, setAssetQuery] = useState('');
   const [assetTint, setAssetTint] = useState('');
@@ -198,6 +216,21 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
   // Widgets & Plugins search
   const [widgetQuery, setWidgetQuery] = useState('');
   const [pluginQuery, setPluginQuery] = useState('');
+
+  // Layers panel search, filter, group collapse, inline rename & drag-reorder
+  const [layerSearch, setLayerSearch] = useState('');
+  const [layerTypeFilter, setLayerTypeFilter] = useState<
+    'all' | 'time' | 'text' | 'media' | 'shape' | 'widget'
+  >('all');
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlineEditValue, setInlineEditValue] = useState('');
+  const [dragItem, setDragItem] = useState<{ key: string; scope: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    key: string;
+    scope: string;
+    pos: 'before' | 'after';
+  } | null>(null);
 
   useEffect(() => {
     void cloudResourceAdapter.getCategories('template').then(setTplCategories);
@@ -361,7 +394,9 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
   const renderElementPreviewThumb = (
     els: EditorElement[],
     bg: BgConfig = { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
-    targetSize: [number, number] = layoutSize
+    targetSize: [number, number] = layoutSize,
+    playMotion = false,
+    liveTick = false
   ) => {
     const dummy: EditorThemeProject = {
       ...project,
@@ -373,9 +408,72 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
       <EditorArtworkRenderer
         project={dummy}
         layoutIndex={0}
-        liveTick={false}
-        playMotion={false}
+        liveTick={liveTick}
+        playMotion={playMotion}
       />
+    );
+  };
+
+  const normalizeAssetElementsForSquarePreview = (els: EditorElement[]): EditorElement[] =>
+    els.map((el) => {
+      if (el.kind === 'shape') {
+        const sh = el.sh || 'rect';
+        if (sh === 'circle' || sh === 'ring') {
+          return { ...el, w: 54, h: 54, ...(sh === 'ring' ? { bw: 1.5 } : {}) };
+        }
+        if (sh === 'brackets') {
+          return { ...el, w: 74, h: 74, bw: 1.4 };
+        }
+        if (sh === 'dash' || sh === 'dots' || sh === 'double' || sh === 'dotline') {
+          return { ...el, w: 74, h: 16 };
+        }
+        if (el.h < 5) {
+          return { ...el, w: 70, h: 8 };
+        }
+        if (els.length > 1) {
+          return { ...el, w: 68, h: 32 };
+        }
+        return { ...el, w: 58, h: 40 };
+      }
+      if (el.kind === 'clock') {
+        return {
+          ...el,
+          size: Math.max(18, Math.min(46, +(el.size * 1.15).toFixed(1))),
+        };
+      }
+      if (el.kind === 'date') {
+        return {
+          ...el,
+          size: Math.max(10, Math.min(22, +(el.size * 1.35).toFixed(1))),
+        };
+      }
+      if (el.kind === 'text') {
+        return {
+          ...el,
+          size: Math.max(10, Math.min(22, +(el.size * 1.35).toFixed(1))),
+        };
+      }
+      return el;
+    });
+
+  const renderTemplateStagePreview = (
+    els: EditorElement[],
+    bg: BgConfig,
+    portraitStage: boolean
+  ) => {
+    if (portraitStage) {
+      return (
+        <div className="flex h-24 w-full items-center justify-center overflow-hidden bg-[#100D20]">
+          <div className="h-[84px] aspect-[9/16] overflow-hidden rounded-md shadow-[0_4px_14px_rgba(0,0,0,0.45)] ring-1 ring-white/15">
+            {renderElementPreviewThumb(els, bg, [480, 854])}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="h-24 w-full overflow-hidden bg-[#100D20]">
+        {renderElementPreviewThumb(els, bg, [1280, 440])}
+      </div>
     );
   };
 
@@ -769,7 +867,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                     {cloudOffline ? '离线状态下暂无匹配已缓存模板' : '没有匹配的云端模板'}
                   </div>
                 ) : (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     {cloudTemplates.map((item) => {
                       const cached = cloudResourceAdapter.getCachedState(item.id);
                       const dl = downloadStates[item.id] ?? cached;
@@ -778,18 +876,13 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                       return (
                         <div
                           key={item.id}
-                          className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_18px_rgba(94,69,248,0.12)]"
+                          className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_18px_rgba(94,69,248,0.1)]"
                         >
-                          <div style={{ aspectRatio }} className="relative w-full overflow-hidden bg-[#120733]">
-                            {renderElementPreviewThumb(item.previewElements ?? [], item.previewBg)}
+                          <div className="relative w-full overflow-hidden">
+                            {renderTemplateStagePreview(item.previewElements ?? [], item.previewBg, false)}
                             <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
-                              {dl.status === 'cached' && (
-                                <span className="rounded-md bg-emerald-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                                  已缓存 v{dl.cachedVersion || item.version}
-                                </span>
-                              )}
                               {isIncompatible && (
-                                <span className="rounded-md bg-amber-600/95 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                <span className="rounded bg-amber-600/95 px-1.5 py-0.5 text-[10px] font-bold text-white">
                                   需 v{item.minClientVersion}
                                 </span>
                               )}
@@ -814,55 +907,55 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                                 }
                                 title="预览多设备效果"
                                 aria-label="预览多设备效果"
-                                className="flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[#5E45F8]"
+                                className="flex h-6 w-6 items-center justify-center rounded-md bg-black/50 text-white opacity-75 transition-opacity group-hover:opacity-100 hover:bg-[#5E45F8]"
                               >
                                 <Eye className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           </div>
-                          <div className="p-2.5">
-                            <div className="flex items-start justify-between gap-1.5">
-                              <div className="min-w-0">
-                                <div className="truncate text-[12px] font-bold text-[#1A172B]">
-                                  {item.name}
-                                </div>
-                                <div className="font-mono-tabular text-[10.5px] text-[#6B6880]">
-                                  {item.author} · v{item.version} · {(item.sizeBytes / 1024).toFixed(0)}KB
-                                </div>
-                              </div>
-                            </div>
+
+                          <div className="px-2.5 py-2">
                             {dl.status === 'downloading' || dl.status === 'verifying' ? (
-                              <div className="mt-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[10.5px] font-semibold text-[#5E45F8]">
+                                  <span className="truncate">{item.name}</span>
+                                  <span className="font-mono-tabular shrink-0">
+                                    {dl.status === 'verifying' ? '校验中…' : `${dl.progress}%`}
+                                  </span>
+                                </div>
                                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#EFEBFD]">
                                   <div
                                     className="h-full bg-[#5E45F8] transition-all"
                                     style={{ width: `${dl.progress}%` }}
                                   />
                                 </div>
-                                <div className="mt-1 text-[10px] text-[#5E45F8]">
-                                  {dl.status === 'verifying' ? '校验完整性 SHA-256…' : `下载中 ${dl.progress}%`}
-                                </div>
                               </div>
                             ) : (
-                              <div className="mt-2 flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  disabled={isIncompatible}
-                                  onClick={() => void handleDownloadAndApplyCloudTemplate(item, false)}
-                                  className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#5E45F8] py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6] disabled:bg-[#DAD6F0]"
-                                >
-                                  <Download className="h-3 w-3" />
-                                  <span>{dl.status === 'cached' ? '应用模板' : '下载并使用'}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={isIncompatible}
-                                  onClick={() => void handleDownloadAndApplyCloudTemplate(item, true)}
-                                  title="创建独立用户副本"
-                                  className="rounded-lg border border-[#E6E4F2] px-2 py-1 text-[11px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8] disabled:opacity-40"
-                                >
-                                  副本
-                                </button>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1 truncate text-[12px] font-bold text-[#1A172B]" title={item.name}>
+                                  {item.name}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={isIncompatible}
+                                    onClick={() => void handleDownloadAndApplyCloudTemplate(item, false)}
+                                    className="flex h-7 items-center gap-1 rounded-lg bg-[#5E45F8] px-2.5 text-[11px] font-semibold text-white hover:bg-[#4D34E6] disabled:bg-[#DAD6F0] whitespace-nowrap"
+                                  >
+                                    {dl.status !== 'cached' && <Download className="h-3 w-3" />}
+                                    <span>{dl.status === 'cached' ? '应用' : '下载'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isIncompatible}
+                                    onClick={() => void handleDownloadAndApplyCloudTemplate(item, true)}
+                                    title="创建独立副本"
+                                    aria-label="创建独立副本"
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E6E4F2] text-[#6B6880] hover:border-[#5E45F8] hover:text-[#5E45F8] disabled:opacity-40"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -876,7 +969,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                         onClick={() => setCloudLimit((l) => l + 16)}
                         className="w-full rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] py-2 font-mono-tabular text-[11.5px] font-semibold text-[#5E45F8] hover:bg-[#EFEBFD]"
                       >
-                        按需加载更多 ({cloudTemplates.length} / {cloudTotal})
+                        加载更多 ({cloudTemplates.length} / {cloudTotal})
                       </button>
                     )}
                   </div>
@@ -885,7 +978,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
             )}
 
             {tplScope === 'builtin' && (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {filteredBuiltinTemplates.map((tpl) => {
                   const els = tpl.buildElements(isPortrait);
                   const bg: BgConfig = { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover', ...tpl.bg };
@@ -894,8 +987,8 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                       key={tpl.id}
                       className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white transition-all hover:border-[#5E45F8]"
                     >
-                      <div style={{ aspectRatio }} className="relative w-full overflow-hidden bg-[#120733]">
-                        {renderElementPreviewThumb(els, bg)}
+                      <div className="relative w-full overflow-hidden">
+                        {renderTemplateStagePreview(els, bg, isPortrait)}
                         <button
                           type="button"
                           onClick={() =>
@@ -915,23 +1008,33 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                           }
                           title="预览横/竖屏双规格效果"
                           aria-label="预览多设备效果"
-                          className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[#5E45F8]"
+                          className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-black/50 text-white opacity-75 transition-opacity group-hover:opacity-100 hover:bg-[#5E45F8]"
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                      <div className="flex items-center justify-between gap-2 p-2.5">
-                        <div className="min-w-0">
-                          <div className="truncate text-[12px] font-bold text-[#1A172B]">{tpl.name}</div>
-                          <div className="truncate text-[10.5px] text-[#6B6880]">{tpl.description}</div>
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                        <div className="min-w-0 flex-1 truncate text-[12px] font-bold text-[#1A172B]" title={tpl.name}>
+                          {tpl.name}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleApplyBuiltinTemplate(tpl, false)}
-                          className="shrink-0 rounded-lg bg-[#5E45F8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6]"
-                        >
-                          使用
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyBuiltinTemplate(tpl, false)}
+                            className="h-7 rounded-lg bg-[#5E45F8] px-2.5 text-[11px] font-semibold text-white hover:bg-[#4D34E6] whitespace-nowrap"
+                          >
+                            应用
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyBuiltinTemplate(tpl, true)}
+                            title="创建独立副本"
+                            aria-label="创建独立副本"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E6E4F2] text-[#6B6880] hover:border-[#5E45F8] hover:text-[#5E45F8]"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -940,55 +1043,109 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
             )}
 
             {tplScope === 'mine' && (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {myCustomThemes.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-[#DAD6F0] py-8 text-center text-[12px] text-[#6B6880]">
                     暂未保存自定义主题，创作保存后可在此复用。
                   </div>
                 ) : (
-                  myCustomThemes.map((t) => (
-                    <div
-                      key={t.id}
-                      className="overflow-hidden rounded-xl border border-[#E6E4F2] bg-white hover:border-[#5E45F8]"
-                    >
-                      {t.editorProject ? (
-                        <div style={{ aspectRatio }} className="w-full overflow-hidden">
-                          <EditorArtworkRenderer project={t.editorProject} layoutIndex={0} liveTick={false} playMotion={false} />
-                        </div>
-                      ) : (
-                        t.imageUrl && (
-                          <div style={{ aspectRatio }} className="w-full overflow-hidden">
-                            <img src={t.imageUrl} alt={t.displayName} className="h-full w-full object-cover" />
+                  myCustomThemes.map((t) => {
+                    const isMinePortrait = t.editorProject
+                      ? (t.editorProject.layouts[0]?.size[0] ?? 1920) <
+                        (t.editorProject.layouts[0]?.size[1] ?? 462)
+                      : t.orientation === 'portrait';
+                    return (
+                      <div
+                        key={t.id}
+                        className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white hover:border-[#5E45F8]"
+                      >
+                        {t.editorProject ? (
+                          <div className="h-24 w-full overflow-hidden bg-[#100D20] flex items-center justify-center">
+                            {isMinePortrait ? (
+                              <div className="h-[84px] aspect-[9/16] overflow-hidden rounded-md shadow-[0_4px_14px_rgba(0,0,0,0.45)] ring-1 ring-white/15">
+                                <EditorArtworkRenderer
+                                  project={{
+                                    ...t.editorProject,
+                                    layouts: [{ size: [480, 854], label: '', follow: false }],
+                                  }}
+                                  layoutIndex={0}
+                                  liveTick={false}
+                                  playMotion={false}
+                                />
+                              </div>
+                            ) : (
+                              <div className="h-full w-full">
+                                <EditorArtworkRenderer
+                                  project={{
+                                    ...t.editorProject,
+                                    layouts: [{ size: [1280, 440], label: '', follow: false }],
+                                  }}
+                                  layoutIndex={0}
+                                  liveTick={false}
+                                  playMotion={false}
+                                />
+                              </div>
+                            )}
                           </div>
-                        )
-                      )}
-                      <div className="flex items-center justify-between gap-2 p-2.5">
-                        <div className="min-w-0">
-                          <div className="truncate text-[12px] font-bold text-[#1A172B]">{t.displayName}</div>
-                          <div className="text-[10.5px] text-[#6B6880]">{t.category}</div>
-                        </div>
-                        {t.editorProject && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onApplyTemplateProject(
-                                {
-                                  ...structuredClone(t.editorProject!),
-                                  template_id: `custom-${Date.now().toString(36)}`,
-                                  name: `${t.displayName} · 副本`,
-                                },
-                                true,
-                                `已基于「${t.displayName}」创建新副本`
-                              )
-                            }
-                            className="shrink-0 rounded-lg bg-[#5E45F8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6]"
-                          >
-                            创建副本
-                          </button>
+                        ) : (
+                          t.imageUrl && (
+                            <div className="h-24 w-full overflow-hidden bg-[#100D20] flex items-center justify-center">
+                              <img
+                                src={t.imageUrl}
+                                alt={t.displayName}
+                                className={
+                                  isMinePortrait
+                                    ? 'h-[84px] aspect-[9/16] rounded-md object-cover'
+                                    : 'h-full w-full object-cover'
+                                }
+                              />
+                            </div>
+                          )
                         )}
+                        <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                          <div className="min-w-0 flex-1 truncate text-[12px] font-bold text-[#1A172B]" title={t.displayName}>
+                            {t.displayName}
+                          </div>
+                          {t.editorProject && (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onApplyTemplateProject(
+                                    structuredClone(t.editorProject!),
+                                    false,
+                                    `已应用我的主题「${t.displayName}」`
+                                  )
+                                }
+                                className="h-7 rounded-lg bg-[#5E45F8] px-2.5 text-[11px] font-semibold text-white hover:bg-[#4D34E6] whitespace-nowrap"
+                              >
+                                应用
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onApplyTemplateProject(
+                                    {
+                                      ...structuredClone(t.editorProject!),
+                                      template_id: `custom-${Date.now().toString(36)}`,
+                                      name: `${t.displayName} · 副本`,
+                                    },
+                                    true,
+                                    `已基于「${t.displayName}」创建新副本`
+                                  )
+                                }
+                                title="创建独立副本"
+                                aria-label="创建独立副本"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E6E4F2] text-[#6B6880] hover:border-[#5E45F8] hover:text-[#5E45F8]"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -998,7 +1155,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
         {/* 3. ASSETS PANEL */}
         {activeTab === 'assets' && (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 rounded-xl border border-[#E6E4F2] bg-[#F5F4FA] p-1 text-[11.5px] font-semibold">
+            <div className="grid grid-cols-3 rounded-xl border border-[#E6E4F2] bg-[#F5F4FA] p-1 text-[11px] font-semibold">
               <button
                 type="button"
                 onClick={() => setAssetSource('builtin')}
@@ -1006,7 +1163,16 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                   assetSource === 'builtin' ? 'bg-white text-[#5E45F8] shadow-xs' : 'text-[#6B6880]'
                 }`}
               >
-                内置素材 ({BUILTIN_ASSET_PRESETS.length})
+                内置 ({BUILTIN_ASSET_PRESETS.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAssetSource('mine')}
+                className={`rounded-lg py-1 transition-all ${
+                  assetSource === 'mine' ? 'bg-white text-[#5E45F8] shadow-xs' : 'text-[#6B6880]'
+                }`}
+              >
+                我的 ({customAssets.length})
               </button>
               <button
                 type="button"
@@ -1015,7 +1181,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                   assetSource === 'cloud' ? 'bg-white text-[#5E45F8] shadow-xs' : 'text-[#6B6880]'
                 }`}
               >
-                云端素材库
+                云端素材
               </button>
             </div>
 
@@ -1075,47 +1241,58 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                     {assetCat === '收藏' ? '暂无收藏素材，点击星标即可收藏' : '没有匹配的素材'}
                   </div>
                 ) : (
-                  <div className={`grid gap-2 ${isPortrait ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className="grid grid-cols-3 gap-2">
                     {filteredBuiltinAssets.map((ap) => {
-                      let previewEls = ap.build(isPortrait);
+                      let previewEls = normalizeAssetElementsForSquarePreview(ap.build(true));
                       if (assetTint) previewEls = previewEls.map((e) => ({ ...e, color: assetTint }));
                       const isFav = assetFavs.includes(ap.name);
                       const isDarkText = assetTint === '#1A172B';
                       return (
                         <div
                           key={ap.id}
-                          className="group relative overflow-hidden rounded-xl border border-[#E6E4F2] bg-white hover:border-[#5E45F8]"
+                          className="group relative aspect-square overflow-hidden rounded-xl border border-[#E6E4F2] bg-white transition-all hover:border-[#5E45F8] hover:shadow-[0_4px_14px_rgba(94,69,248,0.12)]"
                         >
                           <button
                             type="button"
                             onClick={() => handleInsertBuiltinAsset(ap.id)}
-                            className="block w-full text-left"
+                            title={`${ap.name}（点击插入画布）`}
+                            aria-label={`插入素材 ${ap.name}`}
+                            className="block h-full w-full text-left"
                           >
-                            <div style={{ aspectRatio }} className="w-full overflow-hidden">
-                              {renderElementPreviewThumb(previewEls, {
-                                kind: 'style',
-                                style: isDarkText ? 'paper' : 'ink',
-                                dim: 0,
-                                blur: 0,
-                                fit: 'cover',
-                              })}
+                            <div className="h-full w-full overflow-hidden">
+                              {renderElementPreviewThumb(
+                                previewEls,
+                                {
+                                  kind: 'style',
+                                  style: isDarkText ? 'paper' : 'ink',
+                                  dim: 0,
+                                  blur: 0,
+                                  fit: 'cover',
+                                },
+                                [480, 480]
+                              )}
                             </div>
-                            <div className="flex items-center justify-between px-2.5 py-1.5">
-                              <span className="truncate text-[11.5px] font-semibold text-[#1A172B]">
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-1.5 pb-1 pt-3 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div className="truncate text-center text-[10px] font-semibold text-white">
                                 {ap.name}
-                              </span>
-                              <span className="text-[10px] font-semibold text-[#5E45F8]">+ 插入</span>
+                              </div>
                             </div>
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleToggleAssetFav(ap.name)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleAssetFav(ap.name);
+                            }}
                             aria-label={isFav ? '取消收藏' : '收藏'}
-                            className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-black/55 ${
-                              isFav ? 'text-amber-400' : 'text-white/80 hover:text-amber-300'
+                            title={isFav ? '取消收藏' : '收藏'}
+                            className={`absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-md bg-black/45 backdrop-blur-xs transition-opacity ${
+                              isFav
+                                ? 'text-amber-400 opacity-100'
+                                : 'text-white/85 opacity-0 group-hover:opacity-100 hover:text-amber-300'
                             }`}
                           >
-                            <Star className="h-3.5 w-3.5" fill={isFav ? 'currentColor' : 'none'} />
+                            <Star className="h-3 w-3" fill={isFav ? 'currentColor' : 'none'} />
                           </button>
                         </div>
                       );
@@ -1123,66 +1300,185 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                   </div>
                 )}
               </>
-            ) : (
-              <div className="space-y-2">
-                {cloudAssets.map((item) => (
-                  <div
-                    key={item.id}
-                    className="overflow-hidden rounded-xl border border-[#E6E4F2] bg-white hover:border-[#5E45F8]"
-                  >
-                    <div style={{ aspectRatio }} className="w-full overflow-hidden">
-                      {renderElementPreviewThumb(item.previewElements ?? [], item.previewBg)}
+            ) : assetSource === 'mine' ? (
+              (() => {
+                const q = assetQuery.trim().toLowerCase();
+                const list = customAssets.filter(
+                  (a) => !q || a.name.toLowerCase().includes(q)
+                );
+                if (list.length === 0) {
+                  return (
+                    <div className="rounded-xl border border-dashed border-[#DAD6F0] px-4 py-8 text-center text-[11.5px] leading-relaxed text-[#6B6880]">
+                      暂无个人素材。可在画布右键任意元素或组合，选择「存为我的素材」保存。
                     </div>
-                    <div className="flex items-center justify-between gap-2 p-2.5">
-                      <div className="min-w-0">
-                        <div className="truncate text-[11.5px] font-bold text-[#1A172B]">{item.name}</div>
-                        <div className="text-[10px] text-[#6B6880]">{item.tags.slice(0, 2).join(' · ')}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (item.previewElements?.length) {
-                            const cloned = structuredClone(item.previewElements).map((el) => ({
-                              ...el,
-                              id: makeElement('text').id,
-                              color: assetTint || el.color,
-                            }));
-                            onInsertElements(cloned, item.name);
-                          }
-                        }}
-                        className="shrink-0 rounded-lg bg-[#5E45F8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6]"
-                      >
-                        下载插入
-                      </button>
-                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-3 gap-2">
+                    {list.map((ap) => {
+                      const previewEls = normalizeAssetElementsForSquarePreview(
+                        ap.elements.map((el) =>
+                          assetTint && el.kind !== 'image' && el.kind !== 'video'
+                            ? { ...el, color: assetTint }
+                            : el
+                        )
+                      );
+                      const isDarkText = assetTint === '#1A172B';
+                      return (
+                        <div
+                          key={ap.id}
+                          className="group relative aspect-square overflow-hidden rounded-xl border border-[#E6E4F2] bg-white transition-all hover:border-[#5E45F8] hover:shadow-[0_4px_14px_rgba(94,69,248,0.12)]"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cloned = structuredClone(ap.elements).map((el) => ({
+                                ...el,
+                                id: makeElement('text').id,
+                                ...(assetTint && el.kind !== 'image' && el.kind !== 'video'
+                                  ? { color: assetTint }
+                                  : {}),
+                              }));
+                              onInsertElements(cloned, `我的素材「${ap.name}」`);
+                            }}
+                            title={`${ap.name}（点击插入画布）`}
+                            aria-label={`插入个人素材 ${ap.name}`}
+                            className="block h-full w-full text-left"
+                          >
+                            <div className="h-full w-full overflow-hidden">
+                              {renderElementPreviewThumb(
+                                previewEls,
+                                {
+                                  kind: 'style',
+                                  style: isDarkText ? 'paper' : 'ink',
+                                  dim: 0,
+                                  blur: 0,
+                                  fit: 'cover',
+                                },
+                                [480, 480]
+                              )}
+                            </div>
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-1.5 pb-1 pt-3 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div className="truncate text-center text-[10px] font-semibold text-white">
+                                {ap.name}
+                              </div>
+                            </div>
+                          </button>
+                          {onDeleteCustomAsset && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteCustomAsset(ap.id);
+                              }}
+                              aria-label="删除个人素材"
+                              title="删除个人素材"
+                              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-md bg-black/55 text-white/85 opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100 hover:bg-red-600 hover:text-white"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                );
+              })()
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {cloudAssets.map((item) => {
+                  const previewEls = normalizeAssetElementsForSquarePreview(
+                    (item.previewElements ?? []).map((el) => ({
+                      ...el,
+                      color: assetTint || el.color,
+                    }))
+                  );
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (item.previewElements?.length) {
+                          const cloned = structuredClone(item.previewElements).map((el) => ({
+                            ...el,
+                            id: makeElement('text').id,
+                            color: assetTint || el.color,
+                          }));
+                          onInsertElements(cloned, item.name);
+                        }
+                      }}
+                      title={`${item.name}（点击插入画布）`}
+                      aria-label={`插入云端素材 ${item.name}`}
+                      className="group relative aspect-square overflow-hidden rounded-xl border border-[#E6E4F2] bg-white text-left transition-all hover:border-[#5E45F8] hover:shadow-[0_4px_14px_rgba(94,69,248,0.12)]"
+                    >
+                      <div className="h-full w-full overflow-hidden">
+                        {renderElementPreviewThumb(previewEls, item.previewBg, [480, 480])}
+                      </div>
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-1.5 pb-1 pt-3 opacity-0 transition-opacity group-hover:opacity-100">
+                        <div className="truncate text-center text-[10px] font-semibold text-white">
+                          {item.name}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        {/* 4. TEXT PANEL */}
+        {/* 4. TEXT PANEL (Visual Typography Cards) */}
         {activeTab === 'text' && (
-          <div className="space-y-2">
-            {TEXT_STYLE_PRESETS.map((preset) => (
+          <div className="grid grid-cols-2 gap-2">
+            {TEXT_STYLE_PRESETS.map((preset) => {
+              const previewSize = preset.overrides.vert
+                ? 24
+                : Math.max(14, Math.min(34, (preset.overrides.size || 14) * 1.9));
+              const sampleText =
+                preset.id === 'txt-body'
+                  ? '保持创造力'
+                  : preset.overrides.text || preset.label;
+              const previewEl = makeElement('text', {
+                ...preset.overrides,
+                text: sampleText,
+                size: previewSize,
+                a: 'mc',
+                x: 0,
+                y: 0,
+              });
+              return (
                 <button
                   key={preset.id}
                   type="button"
-                  onClick={() => onInsertElements([makeElement('text', preset.overrides)], preset.label)}
-                  className="flex w-full items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-3 py-2.5 text-left transition-all hover:border-[#5E45F8] hover:bg-white"
+                  onClick={() =>
+                    onInsertElements([makeElement('text', preset.overrides)], preset.label)
+                  }
+                  title={`${preset.label} · ${preset.desc}`}
+                  className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white text-left transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]"
                 >
-                  <div className="min-w-0">
-                    <div className="text-[12.5px] font-bold text-[#1A172B]">{preset.label}</div>
-                    <div className="text-[11px] text-[#6B6880]">{preset.desc}</div>
+                  <div className="relative h-20 w-full overflow-hidden bg-[#100D20]">
+                    {renderElementPreviewThumb(
+                      [previewEl],
+                      { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
+                      [420, 260]
+                    )}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2 pb-1 pt-2.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="truncate text-[10px] text-white/90">{preset.desc}</div>
+                    </div>
                   </div>
-                  <Plus className="h-4 w-4 shrink-0 text-[#5E45F8]" />
+                  <div className="flex items-center justify-between px-2.5 py-1.5">
+                    <span className="truncate text-[11.5px] font-bold text-[#1A172B]">
+                      {preset.label}
+                    </span>
+                    <Plus className="h-3.5 w-3.5 shrink-0 text-[#5E45F8] opacity-70 transition-opacity group-hover:opacity-100" />
+                  </div>
                 </button>
-              ))}
+              );
+            })}
           </div>
         )}
 
-        {/* 5. IMAGES PANEL */}
+        {/* 5. IMAGES PANEL (Pure Visual Cards with Hover Actions) */}
         {activeTab === 'images' && (
           <div className="space-y-3">
             <div className="flex gap-2">
@@ -1226,11 +1522,20 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
             {imgSource === 'builtin' && (
               <div className="grid grid-cols-2 gap-2">
                 {BUILTIN_WALLPAPERS.map((wp) => (
-                  <div key={wp.id} className="overflow-hidden rounded-xl border border-[#E6E4F2] bg-white">
-                    <img src={wp.url} alt={wp.name} className="h-16 w-full object-cover" />
-                    <div className="p-1.5">
-                      <div className="truncate text-[11px] font-bold text-[#1A172B]">{wp.name}</div>
-                      <div className="mt-1 flex gap-1">
+                  <div
+                    key={wp.id}
+                    className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-[#E6E4F2] bg-[#100D20] transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.14)]"
+                  >
+                    <img
+                      src={wp.url}
+                      alt={wp.name}
+                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/85 via-black/35 to-black/15 p-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <div className="truncate text-[11px] font-bold text-white drop-shadow">
+                        {wp.name}
+                      </div>
+                      <div className="flex gap-1">
                         <button
                           type="button"
                           onClick={async () => {
@@ -1256,18 +1561,18 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                               wp.name
                             );
                           }}
-                          className="flex-1 rounded-md bg-[#F5F4FA] py-0.5 text-[10.5px] font-semibold text-[#56526B] hover:bg-[#5E45F8] hover:text-white"
+                          className="flex-1 rounded-md bg-white/92 py-1 text-[10.5px] font-bold text-[#1A172B] hover:bg-[#5E45F8] hover:text-white"
                         >
-                          插为图层
+                          插图层
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             onMutateBg((b) => ({ ...b, kind: 'image', url: wp.url, fit: 'cover' }), `背景「${wp.name}」`)
                           }
-                          className="flex-1 rounded-md bg-[#F5F4FA] py-0.5 text-[10.5px] font-semibold text-[#56526B] hover:bg-[#5E45F8] hover:text-white"
+                          className="flex-1 rounded-md bg-[#5E45F8] py-1 text-[10.5px] font-bold text-white hover:bg-[#4D34E6]"
                         >
-                          设为背景
+                          设背景
                         </button>
                       </div>
                     </div>
@@ -1281,39 +1586,62 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                 {themes
                   .filter((t) => t.imageUrl)
                   .map((t) => (
-                    <div key={t.id} className="overflow-hidden rounded-xl border border-[#E6E4F2] bg-white">
-                      <img src={t.imageUrl} alt={t.displayName} className="h-16 w-full object-cover" />
-                      <div className="p-1.5">
-                        <div className="truncate text-[11px] font-bold text-[#1A172B]">{t.displayName}</div>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const dims = await readImageDimensions(t.imageUrl!);
-                            const box = computeImportMediaBox(dims.w, dims.h, layoutSize[0], layoutSize[1]);
-                            onInsertElements(
-                              [
-                                makeElement('image', {
-                                  src: t.imageUrl!,
-                                  w: box.w,
-                                  h: box.h,
-                                  ar: box.ar,
-                                  size: box.size,
-                                  fit: box.fit,
-                                  sourceMeta: {
-                                    origin: 'library',
-                                    name: t.displayName,
-                                    naturalWidth: dims.w,
-                                    naturalHeight: dims.h,
-                                  },
-                                }),
-                              ],
-                              t.displayName
-                            );
-                          }}
-                          className="mt-1 w-full rounded-md bg-[#5E45F8] py-0.5 text-[10.5px] font-semibold text-white hover:bg-[#4D34E6]"
-                        >
-                          添加图片图层
-                        </button>
+                    <div
+                      key={t.id}
+                      className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-[#E6E4F2] bg-[#100D20] transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.14)]"
+                    >
+                      <img
+                        src={t.imageUrl}
+                        alt={t.displayName}
+                        className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/85 via-black/35 to-black/15 p-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <div className="truncate text-[11px] font-bold text-white drop-shadow">
+                          {t.displayName}
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const dims = await readImageDimensions(t.imageUrl!);
+                              const box = computeImportMediaBox(dims.w, dims.h, layoutSize[0], layoutSize[1]);
+                              onInsertElements(
+                                [
+                                  makeElement('image', {
+                                    src: t.imageUrl!,
+                                    w: box.w,
+                                    h: box.h,
+                                    ar: box.ar,
+                                    size: box.size,
+                                    fit: box.fit,
+                                    sourceMeta: {
+                                      origin: 'library',
+                                      name: t.displayName,
+                                      naturalWidth: dims.w,
+                                      naturalHeight: dims.h,
+                                    },
+                                  }),
+                                ],
+                                t.displayName
+                              );
+                            }}
+                            className="flex-1 rounded-md bg-white/92 py-1 text-[10.5px] font-bold text-[#1A172B] hover:bg-[#5E45F8] hover:text-white"
+                          >
+                            插图层
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onMutateBg(
+                                (b) => ({ ...b, kind: 'image', url: t.imageUrl!, fit: 'cover' }),
+                                `背景「${t.displayName}」`
+                              )
+                            }
+                            className="flex-1 rounded-md bg-[#5E45F8] py-1 text-[10.5px] font-bold text-white hover:bg-[#4D34E6]"
+                          >
+                            设背景
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1321,18 +1649,21 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
             )}
 
             {imgSource === 'local' && (
-              <div className="rounded-xl border border-dashed border-[#DAD6F0] bg-[#F8F7FC] p-5 text-center text-[11.5px] text-[#6B6880]">
+              <button
+                type="button"
+                onClick={() => onTriggerLocalUpload('el')}
+                className="w-full rounded-xl border border-dashed border-[#DAD6F0] bg-[#F8F7FC] p-5 text-center text-[11.5px] text-[#6B6880] transition-colors hover:border-[#5E45F8] hover:text-[#5E45F8]"
+              >
                 <ImageIcon className="mx-auto mb-2 h-6 w-6 text-[#5E45F8]" />
-                <div>点击上传或拖拽图片至画布</div>
-              </div>
+                <div className="font-semibold">点击上传或拖拽图片至画布</div>
+              </button>
             )}
           </div>
         )}
 
-        {/* 6. TIME PANEL (Split Time Modules + Clock Presets) */}
+        {/* 6. TIME PANEL (Visual Split Time Modules + Clock Presets) */}
         {activeTab === 'time' && (
           <div className="space-y-4">
-
             <div className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-3 py-2 text-[11.5px]">
               <label className="flex cursor-pointer items-center gap-1.5 font-medium text-[#1A172B]">
                 <input
@@ -1360,23 +1691,66 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: '小时 (HH)', build: () => makeElement('clock', { part: 'hour', h24: timeUse24, size: 34 }) },
-                  { label: '分钟 (MM)', build: () => makeElement('clock', { part: 'minute', h24: timeUse24, size: 34 }) },
-                  { label: '秒钟 (SS)', build: () => makeElement('clock', { part: 'second', h24: timeUse24, size: 22 }) },
-                  { label: '时分组合', build: () => makeElement('clock', { part: 'hm', h24: timeUse24, sec: false, size: 36 }) },
-                  { label: '时分秒组合', build: () => makeElement('clock', { part: 'hms', h24: timeUse24, sec: true, size: 32 }) },
-                  { label: '年月日', build: () => makeElement('date', { part: 'ymd', fmt: 2, size: 10 }) },
-                  { label: '星期', build: () => makeElement('date', { part: 'weekday', fmt: 0, size: 9 }) },
-                  { label: 'AM / PM', build: () => makeElement('date', { part: 'ampm', size: 9 }) },
+                  {
+                    label: '小时 (HH)',
+                    preview: () => makeElement('clock', { part: 'hour', h24: timeUse24, size: 42 }),
+                    build: () => makeElement('clock', { part: 'hour', h24: timeUse24, size: 34 }),
+                  },
+                  {
+                    label: '分钟 (MM)',
+                    preview: () => makeElement('clock', { part: 'minute', h24: timeUse24, size: 42 }),
+                    build: () => makeElement('clock', { part: 'minute', h24: timeUse24, size: 34 }),
+                  },
+                  {
+                    label: '秒钟 (SS)',
+                    preview: () => makeElement('clock', { part: 'second', h24: timeUse24, size: 40, color: '#38BDF8' }),
+                    build: () => makeElement('clock', { part: 'second', h24: timeUse24, size: 22 }),
+                  },
+                  {
+                    label: '时分组合',
+                    preview: () => makeElement('clock', { part: 'hm', h24: timeUse24, sec: false, size: 32 }),
+                    build: () => makeElement('clock', { part: 'hm', h24: timeUse24, sec: false, size: 36 }),
+                  },
+                  {
+                    label: '时分秒组合',
+                    preview: () => makeElement('clock', { part: 'hms', h24: timeUse24, sec: true, size: 26 }),
+                    build: () => makeElement('clock', { part: 'hms', h24: timeUse24, sec: true, size: 32 }),
+                  },
+                  {
+                    label: '年月日',
+                    preview: () => makeElement('date', { part: 'ymd', fmt: 2, size: 17 }),
+                    build: () => makeElement('date', { part: 'ymd', fmt: 2, size: 10 }),
+                  },
+                  {
+                    label: '星期',
+                    preview: () => makeElement('date', { part: 'weekday', fmt: 0, size: 22 }),
+                    build: () => makeElement('date', { part: 'weekday', fmt: 0, size: 9 }),
+                  },
+                  {
+                    label: 'AM / PM',
+                    preview: () => makeElement('date', { part: 'ampm', size: 24, color: '#A78BFA' }),
+                    build: () => makeElement('date', { part: 'ampm', size: 9 }),
+                  },
                 ].map((item) => (
                   <button
                     key={item.label}
                     type="button"
                     onClick={() => onInsertElements([item.build()], item.label)}
-                    className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-2 text-[11.5px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8]"
+                    className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white text-left transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]"
                   >
-                    <span>{item.label}</span>
-                    <Plus className="h-3.5 w-3.5" />
+                    <div className="h-12 w-full overflow-hidden bg-[#100D20]">
+                      {renderElementPreviewThumb(
+                        [item.preview()],
+                        { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
+                        [400, 180],
+                        false,
+                        true
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between px-2 py-1 text-[11px] font-semibold text-[#1A172B]">
+                      <span className="truncate">{item.label}</span>
+                      <Plus className="h-3 w-3 shrink-0 text-[#5E45F8]" />
+                    </div>
                   </button>
                 ))}
               </div>
@@ -1410,18 +1784,28 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                         preset.label
                       )
                     }
-                    className="rounded-xl border border-[#E6E4F2] bg-white p-2 text-left hover:border-[#5E45F8]"
+                    className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white text-left transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]"
                   >
-                    <div className="h-12 w-full overflow-hidden rounded-lg">
-                      {renderElementPreviewThumb([
-                        makeElement('clock', {
-                          style: preset.style,
-                          font: preset.font,
-                          size: 36,
-                        }),
-                      ])}
+                    <div className="h-16 w-full overflow-hidden bg-[#100D20]">
+                      {renderElementPreviewThumb(
+                        [
+                          makeElement('clock', {
+                            style: preset.style,
+                            font: preset.font,
+                            h24: timeUse24,
+                            sec: timeShowSec || preset.style === 'analog',
+                            size: preset.style === 'analog' ? 54 : 34,
+                          }),
+                        ],
+                        { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
+                        [380, 220],
+                        false,
+                        true
+                      )}
                     </div>
-                    <div className="mt-1.5 text-[11.5px] font-bold text-[#1A172B]">{preset.label}</div>
+                    <div className="px-2 py-1.5 text-[11.5px] font-bold text-[#1A172B]">
+                      {preset.label}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -1429,53 +1813,67 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
           </div>
         )}
 
-        {/* 7. MOTION PANEL */}
+        {/* 7. MOTION PANEL (Live Motion Stage Cards) */}
         {activeTab === 'motion' && (
           <div className="space-y-3">
-            <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
               {MOTION_PRESETS.map((mo) => (
-                <div
+                <button
                   key={mo.id}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-[#E6E4F2] bg-white p-2.5 hover:border-[#5E45F8]"
+                  type="button"
+                  onClick={() =>
+                    onInsertElements(
+                      [
+                        makeElement('motion', {
+                          effect: mo.effect,
+                          color: mo.color,
+                          secondaryColor: mo.secondaryColor,
+                          performanceCost: mo.cost,
+                          requiresGpu: mo.requiresGpu,
+                          label: mo.name,
+                          w: 100,
+                          h: 100,
+                        }),
+                      ],
+                      mo.name
+                    )
+                  }
+                  title={mo.desc}
+                  className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white text-left transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]"
                 >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-bold text-[#1A172B]">{mo.name}</span>
-                      <span
-                        className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                          mo.cost === 'low'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {mo.cost === 'low' ? '低开销' : '中开销'}
-                      </span>
+                  <div className="relative h-20 w-full overflow-hidden bg-[#100D20]">
+                    {renderElementPreviewThumb(
+                      [
+                        makeElement('motion', {
+                          effect: mo.effect,
+                          color: mo.color,
+                          secondaryColor: mo.secondaryColor,
+                          performanceCost: mo.cost,
+                          requiresGpu: mo.requiresGpu,
+                          label: mo.name,
+                          w: 100,
+                          h: 100,
+                          alpha: 0.95,
+                        }),
+                      ],
+                      { kind: 'style', style: 'night', dim: 0, blur: 0, fit: 'cover' },
+                      [360, 220],
+                      true,
+                      false
+                    )}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2 pb-1 pt-2 opacity-0 transition-opacity group-hover:opacity-100">
+                      <span className="text-[10px] font-medium text-white/90">点击叠加特效</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onInsertElements(
-                        [
-                          makeElement('motion', {
-                            effect: mo.effect,
-                            color: mo.color,
-                            secondaryColor: mo.secondaryColor,
-                            performanceCost: mo.cost,
-                            requiresGpu: mo.requiresGpu,
-                            label: mo.name,
-                            w: 100,
-                            h: 100,
-                          }),
-                        ],
-                        mo.name
-                      )
-                    }
-                    className="shrink-0 rounded-lg bg-[#5E45F8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6]"
-                  >
-                    添加
-                  </button>
-                </div>
+                  <div className="px-2 py-1.5">
+                    <div className="truncate text-[11.5px] font-bold text-[#1A172B]">{mo.name}</div>
+                    <div className="text-[10px] text-[#6B6880]">
+                      {mo.cost === 'low' ? '低开销' : '中开销'}
+                      <span aria-hidden="true"> · </span>
+                      {mo.requiresGpu ? 'GPU 加速' : '全平台流畅'}
+                    </div>
+                  </div>
+                </button>
               ))}
             </div>
             <button
@@ -1489,7 +1887,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
           </div>
         )}
 
-        {/* 8. WIDGETS PANEL (Structured Components) */}
+        {/* 8. WIDGETS PANEL (Visual Preview Cards) */}
         {activeTab === 'widgets' && (
           <div className="space-y-3">
             <div className="relative">
@@ -1503,57 +1901,76 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {WIDGET_CATALOG.filter(
                 (w) =>
                   !widgetQuery.trim() ||
                   `${w.name} ${w.description}`.toLowerCase().includes(widgetQuery.trim().toLowerCase())
-              ).map((w) => (
-                <div
-                  key={w.type}
-                  className="rounded-xl border border-[#E6E4F2] bg-white p-2.5 hover:border-[#5E45F8]"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <Activity className="h-3.5 w-3.5 text-[#5E45F8]" />
-                        <span className="text-[12px] font-bold text-[#1A172B]">{w.name}</span>
-                        <span className="rounded bg-[#F5F4FA] px-1 py-0.5 font-mono-tabular text-[10px] text-[#6B6880]">
-                          v{w.version}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[10.5px] text-[#6B6880]">{w.description}</div>
+              ).map((w) => {
+                const previewWidget = makeElement('widget', {
+                  widgetType: w.type,
+                  widgetVersion: w.version,
+                  dataSource: w.dataSource,
+                  a: 'mc',
+                  x: 0,
+                  y: 0,
+                  w: 76,
+                  h: 74,
+                  accentColor: w.defaultAccent,
+                  label: w.name,
+                });
+                return (
+                  <div
+                    key={w.type}
+                    className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]"
+                  >
+                    <div className="h-24 w-full overflow-hidden bg-[#100D20]">
+                      {renderElementPreviewThumb(
+                        [previewWidget],
+                        { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
+                        [440, 240],
+                        false,
+                        false
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onInsertElements(
-                          [
-                            makeElement('widget', {
-                              widgetType: w.type,
-                              widgetVersion: w.version,
-                              dataSource: w.dataSource,
-                              w: isPortrait ? Math.min(88, w.defaultW * 2.2) : w.defaultW,
-                              h: isPortrait ? Math.round(w.defaultH * 0.45) : w.defaultH,
-                              accentColor: w.defaultAccent,
-                              label: w.name,
-                            }),
-                          ],
-                          `组件「${w.name}」`
-                        )
-                      }
-                      className="shrink-0 rounded-lg bg-[#5E45F8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6]"
-                    >
-                      插入
-                    </button>
+                    <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-bold text-[#1A172B]">{w.name}</div>
+                        <div className="truncate text-[10.5px] text-[#6B6880]">
+                          {w.description}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onInsertElements(
+                            [
+                              makeElement('widget', {
+                                widgetType: w.type,
+                                widgetVersion: w.version,
+                                dataSource: w.dataSource,
+                                w: isPortrait ? Math.min(88, w.defaultW * 2.2) : w.defaultW,
+                                h: isPortrait ? Math.round(w.defaultH * 0.45) : w.defaultH,
+                                accentColor: w.defaultAccent,
+                                label: w.name,
+                              }),
+                            ],
+                            `组件「${w.name}」`
+                          )
+                        }
+                        className="shrink-0 rounded-lg bg-[#5E45F8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#4D34E6]"
+                      >
+                        插入
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* 9. PLUGINS PANEL (Declarative Registry) */}
+        {/* 9. PLUGINS PANEL (Visual Preview Cards) */}
         {activeTab === 'plugins' && (
           <div className="space-y-3">
             <div className="relative">
@@ -1567,77 +1984,97 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {PLUGIN_CAPABILITY_REGISTRY.filter(
                 (p) =>
                   !pluginQuery.trim() ||
                   `${p.name} ${p.category} ${p.description}`
                     .toLowerCase()
                     .includes(pluginQuery.trim().toLowerCase())
-              ).map((p) => (
-                <div
-                  key={p.id}
-                  className={`rounded-xl border p-2.5 ${
-                    p.supportedInRuntime
-                      ? 'border-[#E6E4F2] bg-white hover:border-[#5E45F8]'
-                      : 'border-amber-200 bg-amber-50/50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Puzzle className="h-3.5 w-3.5 text-[#5E45F8]" />
-                        <span className="text-[12px] font-bold text-[#1A172B]">{p.name}</span>
-                        <span className="rounded bg-[#F5F4FA] px-1 font-mono-tabular text-[10px] text-[#6B6880]">
-                          v{p.version}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[10.5px] text-[#6B6880]">{p.description}</div>
-                      <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-[#56526B]">
-                        <span>{p.category}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{p.performanceTier}</span>
-                        {!p.supportedInRuntime && (
-                          <span className="flex items-center gap-0.5 font-semibold text-amber-800">
-                            <AlertTriangle className="h-3 w-3" />
-                            需 v{p.minClientVersion}
-                          </span>
-                        )}
-                      </div>
+              ).map((p) => {
+                const previewPlugin = makeElement('plugin', {
+                  pluginId: p.id,
+                  pluginName: p.name,
+                  pluginVersion: p.version,
+                  capabilityKey: p.key,
+                  a: 'mc',
+                  x: 0,
+                  y: 0,
+                  w: 78,
+                  h: 74,
+                  accentColor: p.defaultAccent,
+                  config: { ...p.defaultConfig },
+                });
+                return (
+                  <div
+                    key={p.id}
+                    className={`overflow-hidden rounded-xl border transition-all ${
+                      p.supportedInRuntime
+                        ? 'border-[#E6E4F2] bg-white hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]'
+                        : 'border-amber-200 bg-amber-50/40'
+                    }`}
+                  >
+                    <div className="h-24 w-full overflow-hidden bg-[#100D20]">
+                      {renderElementPreviewThumb(
+                        [previewPlugin],
+                        { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
+                        [440, 240],
+                        false,
+                        false
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!p.supportedInRuntime) {
-                          onNotify(p.unsupportedReason || '当前客户端引擎版本暂不支持此原生插件能力');
-                        }
-                        onInsertElements(
-                          [
-                            makeElement('plugin', {
-                              pluginId: p.id,
-                              pluginName: p.name,
-                              pluginVersion: p.version,
-                              capabilityKey: p.key,
-                              w: isPortrait ? Math.min(88, p.defaultW * 2.2) : p.defaultW,
-                              h: isPortrait ? Math.round(p.defaultH * 0.45) : p.defaultH,
-                              accentColor: p.defaultAccent,
-                              config: { ...p.defaultConfig },
-                            }),
-                          ],
-                          `插件「${p.name}」`
-                        );
-                      }}
-                      className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold ${
-                        p.supportedInRuntime
-                          ? 'bg-[#5E45F8] text-white hover:bg-[#4D34E6]'
-                          : 'border border-amber-400 bg-amber-100 text-amber-900'
-                      }`}
-                    >
-                      {p.supportedInRuntime ? '插入' : '兼容性占位'}
-                    </button>
+                    <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-bold text-[#1A172B]">{p.name}</div>
+                        <div className="mt-0.5 flex items-center gap-1 truncate text-[10.5px] text-[#6B6880]">
+                          <span>{p.category}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{p.performanceTier}</span>
+                          {!p.supportedInRuntime && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="inline-flex items-center gap-0.5 font-semibold text-amber-800">
+                                <AlertTriangle className="h-3 w-3" />
+                                需 v{p.minClientVersion}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!p.supportedInRuntime) {
+                            onNotify(p.unsupportedReason || '当前客户端引擎版本暂不支持此原生插件能力');
+                          }
+                          onInsertElements(
+                            [
+                              makeElement('plugin', {
+                                pluginId: p.id,
+                                pluginName: p.name,
+                                pluginVersion: p.version,
+                                capabilityKey: p.key,
+                                w: isPortrait ? Math.min(88, p.defaultW * 2.2) : p.defaultW,
+                                h: isPortrait ? Math.round(p.defaultH * 0.45) : p.defaultH,
+                                accentColor: p.defaultAccent,
+                                config: { ...p.defaultConfig },
+                              }),
+                            ],
+                            `插件「${p.name}」`
+                          );
+                        }}
+                        className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold ${
+                          p.supportedInRuntime
+                            ? 'bg-[#5E45F8] text-white hover:bg-[#4D34E6]'
+                            : 'border border-amber-400 bg-amber-100 text-amber-900'
+                        }`}
+                      >
+                        {p.supportedInRuntime ? '插入' : '占位'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1663,6 +2100,32 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                 <span>画布调整</span>
               </button>
             </div>
+
+            {extractedPalette.length > 0 && (
+              <div className="rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[11px] font-bold tracking-wider text-[#6B6880]">
+                    当前背景自动取色
+                  </span>
+                  <span className="text-[10px] text-[#8E89A6]">点击复制色值</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {extractedPalette.map((hex) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      title={`点击复制 ${hex}`}
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(hex);
+                        onNotify(`已复制背景取色 ${hex}`);
+                      }}
+                      className="flex h-6 flex-1 items-center justify-center rounded-lg border border-black/10 transition-transform hover:scale-105"
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <div className="mb-2 text-[11px] font-bold tracking-wider text-[#6B6880]">
@@ -1758,186 +2221,577 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
         )}
 
         {/* 11. LAYERS PANEL */}
-        {activeTab === 'layers' && (
-          <div className="space-y-3">
-            {/* Layer Bulk Quick Tools */}
-            <div className="flex items-center justify-between gap-1 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-1.5">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={selectedIds.length === 0}
-                  onClick={() => onReorderLayer('up')}
-                  title="上移一层"
-                  className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
-                >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  disabled={selectedIds.length === 0}
-                  onClick={() => onReorderLayer('down')}
-                  title="下移一层"
-                  className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
-                >
-                  <ArrowDown className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  disabled={selectedIds.length === 0}
-                  onClick={onDuplicateSelection}
-                  title="复制图层 (Ctrl+D)"
-                  className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <button
-                type="button"
-                disabled={selectedIds.length === 0}
-                onClick={onDeleteSelection}
-                title="删除选中图层 (Delete)"
-                className="rounded-lg p-1 text-red-500 hover:bg-red-50 disabled:opacity-35"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
+        {activeTab === 'layers' && (() => {
+          const getElementDefaultLabel = (el: EditorElement) =>
+            el.kind === 'clock'
+              ? el.style === 'analog'
+                ? '指针表盘'
+                : '数字时钟'
+              : el.kind === 'date'
+                ? '日期模块'
+                : el.kind === 'text'
+                  ? el.text.slice(0, 12) || '文字'
+                  : el.kind === 'image'
+                    ? el.sourceMeta?.name || '图片图层'
+                    : el.kind === 'video'
+                      ? '视频图层'
+                      : el.kind === 'motion'
+                        ? el.label || '动态层'
+                        : el.kind === 'widget'
+                          ? el.label || '组件'
+                          : el.kind === 'plugin'
+                            ? el.pluginName
+                            : '矢量形状';
 
-            {currentElements.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#DAD6F0] py-8 text-center text-[11.5px] text-[#6B6880]">
-                画布暂无前景图层，可从左侧「添加」或「素材」插入元素。
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {[...currentElements].reverse().map((el) => {
-                  const isSel = selectedIds.includes(el.id);
-                  const locked = Boolean(project.locks[el.id]);
-                  const hidden = isElementHidden(project, layoutIndex, el);
-                  const customName = project.names[el.id];
-                  const defaultLabel =
-                    el.kind === 'clock'
-                      ? el.style === 'analog'
-                        ? '指针表盘'
-                        : '数字时钟'
-                      : el.kind === 'date'
-                        ? '日期模块'
-                        : el.kind === 'text'
-                          ? el.text.slice(0, 12) || '文字'
-                          : el.kind === 'image'
-                            ? el.sourceMeta?.name || '图片图层'
-                            : el.kind === 'video'
-                              ? '视频图层'
-                              : el.kind === 'motion'
-                                ? el.label || '动态层'
-                                : el.kind === 'widget'
-                                  ? el.label || '组件'
-                                  : el.kind === 'plugin'
-                                    ? el.pluginName
-                                    : '矢量形状';
+          const getTypeIcon = (el: EditorElement) =>
+            el.kind === 'clock' || el.kind === 'date'
+              ? Clock
+              : el.kind === 'text'
+                ? Type
+                : el.kind === 'image'
+                  ? ImageIcon
+                  : el.kind === 'video'
+                    ? Video
+                    : el.kind === 'motion'
+                      ? Sparkles
+                      : el.kind === 'widget'
+                        ? Activity
+                        : el.kind === 'plugin'
+                          ? Puzzle
+                          : Shapes;
 
-                  const TypeIcon =
-                    el.kind === 'clock' || el.kind === 'date'
-                      ? Clock
-                      : el.kind === 'text'
-                        ? Type
-                        : el.kind === 'image'
-                          ? ImageIcon
-                          : el.kind === 'video'
-                            ? Video
-                            : el.kind === 'motion'
-                              ? Sparkles
-                              : el.kind === 'widget'
-                                ? Activity
-                                : el.kind === 'plugin'
-                                  ? Puzzle
-                                  : Shapes;
+          const visualElements = [...currentElements].reverse();
+          const isFiltering = Boolean(layerSearch.trim()) || layerTypeFilter !== 'all';
 
-                  return (
-                    <div
-                      key={el.id}
-                      onClick={(e) => onSelectLayer(el.id, e.shiftKey || e.ctrlKey || e.metaKey)}
-                      className={`group flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[12px] transition-colors ${
-                        isSel
-                          ? 'border-[#5E45F8] bg-[#EFEBFD]/75 text-[#1A172B]'
-                          : 'border-transparent hover:border-[#E6E4F2] hover:bg-[#F8F7FC]'
-                      } ${hidden ? 'opacity-50' : ''}`}
-                    >
-                      <TypeIcon className={`h-3.5 w-3.5 shrink-0 ${isSel ? 'text-[#5E45F8]' : 'text-[#6B6880]'}`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">
-                          {customName || defaultLabel}
-                        </div>
-                        {el.g && (
-                          <div className="text-[10px] text-[#5E45F8]">组合 · {el.g.slice(-4)}</div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRenameLayer(el.id);
-                          }}
-                          title="重命名"
-                          className="rounded p-1 text-[#6B6880] hover:bg-white hover:text-[#1A172B]"
-                        >
-                          <Edit3 className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleHide([el.id]);
-                          }}
-                          title={hidden ? '显示图层' : '隐藏图层'}
-                          className="rounded p-1 text-[#6B6880] hover:bg-white hover:text-[#1A172B]"
-                        >
-                          {hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleLock([el.id]);
-                          }}
-                          title={locked ? '解锁图层' : '锁定图层'}
-                          className={`rounded p-1 hover:bg-white ${locked ? 'text-amber-600' : 'text-[#6B6880]'}`}
-                        >
-                          {locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          const groupCounts: Record<string, number> = {};
+          visualElements.forEach((el) => {
+            if (el.g) groupCounts[el.g] = (groupCounts[el.g] || 0) + 1;
+          });
 
-            {/* Background Layer Row */}
-            <div className="border-t border-[#E6E4F2] pt-2">
+          type LayerVisualNode =
+            | { type: 'group'; key: string; gid: string; members: EditorElement[] }
+            | { type: 'single'; key: string; el: EditorElement };
+
+          const topNodes: LayerVisualNode[] = [];
+          const seenGroups = new Set<string>();
+          visualElements.forEach((el) => {
+            if (el.g && (groupCounts[el.g] || 0) >= 2) {
+              if (!seenGroups.has(el.g)) {
+                seenGroups.add(el.g);
+                topNodes.push({
+                  type: 'group',
+                  key: `grp:${el.g}`,
+                  gid: el.g,
+                  members: visualElements.filter((m) => m.g === el.g),
+                });
+              }
+            } else {
+              topNodes.push({ type: 'single', key: `el:${el.id}`, el });
+            }
+          });
+
+          const flattenTopNodes = (nodes: LayerVisualNode[]): string[] => {
+            const visualIds = nodes.flatMap((n) =>
+              n.type === 'group' ? n.members.map((m) => m.id) : [n.el.id]
+            );
+            return [...visualIds].reverse();
+          };
+
+          const handleDropReorder = (targetKey: string, targetScope: string, pos: 'before' | 'after') => {
+            if (!dragItem || dragItem.key === targetKey || dragItem.scope !== targetScope) {
+              setDragItem(null);
+              setDropTarget(null);
+              return;
+            }
+            if (targetScope === 'top') {
+              const copy = [...topNodes];
+              const fromIdx = copy.findIndex((n) => n.key === dragItem.key);
+              let toIdx = copy.findIndex((n) => n.key === targetKey);
+              if (fromIdx !== -1 && toIdx !== -1) {
+                const [moved] = copy.splice(fromIdx, 1);
+                toIdx = copy.findIndex((n) => n.key === targetKey);
+                const insertIdx = pos === 'before' ? toIdx : toIdx + 1;
+                copy.splice(insertIdx, 0, moved);
+                onReorderElements(flattenTopNodes(copy));
+              }
+            } else if (targetScope.startsWith('grp:')) {
+              const gid = targetScope.slice(4);
+              const copy = topNodes.map((n) => {
+                if (n.type !== 'group' || n.gid !== gid) return n;
+                const members = [...n.members];
+                const dragId = dragItem.key.replace(/^el:/, '');
+                const tgtId = targetKey.replace(/^el:/, '');
+                const fromIdx = members.findIndex((m) => m.id === dragId);
+                let toIdx = members.findIndex((m) => m.id === tgtId);
+                if (fromIdx === -1 || toIdx === -1) return n;
+                const [moved] = members.splice(fromIdx, 1);
+                toIdx = members.findIndex((m) => m.id === tgtId);
+                members.splice(pos === 'before' ? toIdx : toIdx + 1, 0, moved);
+                return { ...n, members };
+              });
+              onReorderElements(flattenTopNodes(copy));
+            }
+            setDragItem(null);
+            setDropTarget(null);
+          };
+
+          const filteredFlatElements = visualElements.filter((el) => {
+            if (layerTypeFilter === 'time' && el.kind !== 'clock' && el.kind !== 'date') return false;
+            if (layerTypeFilter === 'text' && el.kind !== 'text') return false;
+            if (layerTypeFilter === 'media' && el.kind !== 'image' && el.kind !== 'video') return false;
+            if (layerTypeFilter === 'shape' && el.kind !== 'shape') return false;
+            if (
+              layerTypeFilter === 'widget' &&
+              el.kind !== 'widget' &&
+              el.kind !== 'plugin' &&
+              el.kind !== 'motion'
+            ) {
+              return false;
+            }
+            const q = layerSearch.trim().toLowerCase();
+            if (!q) return true;
+            const displayName = (project.names[el.id] || getElementDefaultLabel(el)).toLowerCase();
+            return displayName.includes(q) || el.kind.toLowerCase().includes(q);
+          });
+
+          const renderElementRow = (el: EditorElement, scope: string, nested = false) => {
+            const isSel = selectedIds.includes(el.id);
+            const locked = Boolean(project.locks[el.id]);
+            const hidden = isElementHidden(project, layoutIndex, el);
+            const customName = project.names[el.id];
+            const defaultLabel = getElementDefaultLabel(el);
+            const displayName = customName || defaultLabel;
+            const TypeIcon = getTypeIcon(el);
+            const rowKey = `el:${el.id}`;
+            const isInlineEditing = inlineEditId === el.id;
+            const canDrag = !isFiltering && !isInlineEditing;
+            const dropPos =
+              dropTarget?.key === rowKey && dropTarget.scope === scope ? dropTarget.pos : null;
+
+            return (
               <div
-                onClick={onSelectBgLayer}
-                className={`flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-[12px] ${
-                  selectedIds.length === 0
-                    ? 'border-[#5E45F8] bg-[#EFEBFD]/75 font-semibold text-[#1A172B]'
+                key={el.id}
+                draggable={canDrag}
+                onDragStart={(e) => {
+                  if (!canDrag) return;
+                  e.stopPropagation();
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', rowKey);
+                  setDragItem({ key: rowKey, scope });
+                }}
+                onDragOver={(e) => {
+                  if (!dragItem || dragItem.scope !== scope || dragItem.key === rowKey) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+                  if (dropTarget?.key !== rowKey || dropTarget.pos !== pos) {
+                    setDropTarget({ key: rowKey, scope, pos });
+                  }
+                }}
+                onDrop={(e) => {
+                  if (!dragItem || dragItem.scope !== scope) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+                  handleDropReorder(rowKey, scope, pos);
+                }}
+                onDragEnd={() => {
+                  setDragItem(null);
+                  setDropTarget(null);
+                }}
+                onClick={(e) => {
+                  if (isInlineEditing) return;
+                  onSelectLayer(el.id, e.shiftKey || e.ctrlKey || e.metaKey);
+                }}
+                onContextMenu={(e) => {
+                  if (!onContextMenuLayer) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onContextMenuLayer(e, [el.id]);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setInlineEditId(el.id);
+                  setInlineEditValue(customName || defaultLabel);
+                }}
+                className={`group relative flex cursor-pointer items-center gap-1.5 rounded-xl border py-1.5 pr-2 text-[12px] transition-colors ${
+                  nested ? 'pl-2.5' : 'pl-1.5'
+                } ${
+                  isSel
+                    ? 'border-[#5E45F8] bg-[#EFEBFD]/75 text-[#1A172B]'
                     : 'border-transparent hover:border-[#E6E4F2] hover:bg-[#F8F7FC]'
+                } ${hidden ? 'opacity-50' : ''} ${
+                  dragItem?.key === rowKey ? 'opacity-40' : ''
+                } ${
+                  dropPos === 'before'
+                    ? 'border-t-2 border-t-[#5E45F8]'
+                    : dropPos === 'after'
+                      ? 'border-b-2 border-b-[#5E45F8]'
+                      : ''
                 }`}
               >
-                <Layers className="h-3.5 w-3.5 text-[#6B6880]" />
-                <span className="flex-1 truncate">背景层 ({project.bg.kind})</span>
+                {canDrag && (
+                  <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-[#B8B2CE] opacity-60 group-hover:opacity-100" />
+                )}
+                <TypeIcon className={`h-3.5 w-3.5 shrink-0 ${isSel ? 'text-[#5E45F8]' : 'text-[#6B6880]'}`} />
+                <div className="min-w-0 flex-1">
+                  {isInlineEditing ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={inlineEditValue}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setInlineEditValue(e.target.value)}
+                      onBlur={() => {
+                        onCommitLayerName(el.id, inlineEditValue);
+                        setInlineEditId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') {
+                          onCommitLayerName(el.id, inlineEditValue);
+                          setInlineEditId(null);
+                        } else if (e.key === 'Escape') {
+                          setInlineEditId(null);
+                        }
+                      }}
+                      aria-label="编辑图层名称"
+                      className="w-full rounded-md border border-[#5E45F8] bg-white px-1.5 py-0.5 text-[11.5px] font-medium text-[#1A172B] outline-none"
+                    />
+                  ) : (
+                    <div className="truncate font-medium" title="双击直接重命名">
+                      {displayName}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInlineEditId(el.id);
+                      setInlineEditValue(customName || defaultLabel);
+                    }}
+                    title="重命名（或双击名称）"
+                    className="rounded p-1 text-[#6B6880] hover:bg-white hover:text-[#1A172B]"
+                  >
+                    <Edit3 className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleHide([el.id]);
+                    }}
+                    title={hidden ? '显示图层' : '隐藏图层'}
+                    className="rounded p-1 text-[#6B6880] hover:bg-white hover:text-[#1A172B]"
+                  >
+                    {hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleLock([el.id]);
+                    }}
+                    title={locked ? '解锁图层' : '锁定图层'}
+                    className={`rounded p-1 hover:bg-white ${locked ? 'text-amber-600' : 'text-[#6B6880]'}`}
+                  >
+                    {locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                  </button>
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="space-y-2.5">
+              {/* Layer Bulk Quick Tools */}
+              <div className="flex items-center justify-between gap-1 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-1.5">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={selectedIds.length === 0}
+                    onClick={() => onReorderLayer('up')}
+                    title="上移一层"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedIds.length === 0}
+                    onClick={() => onReorderLayer('down')}
+                    title="下移一层"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedIds.length === 0}
+                    onClick={onDuplicateSelection}
+                    title="复制图层 (Ctrl+D)"
+                    className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8] disabled:opacity-35"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  {selectedIds.length === 1 && (
+                    <button
+                      type="button"
+                      onClick={() => onRenameLayer(selectedIds[0])}
+                      title="弹窗重命名"
+                      className="rounded-lg p-1 text-[#56526B] hover:bg-white hover:text-[#5E45F8]"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMutateBg((b) => ({ ...b, hide: !b.hide }));
-                  }}
-                  title={project.bg.hide ? '显示背景' : '隐藏背景'}
-                  className="rounded p-1 text-[#6B6880] hover:bg-white"
+                  disabled={selectedIds.length === 0}
+                  onClick={onDeleteSelection}
+                  title="删除选中图层 (Delete)"
+                  className="rounded-lg p-1 text-red-500 hover:bg-red-50 disabled:opacity-35"
                 >
-                  {project.bg.hide ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
+
+              {/* Search & Type Filter */}
+              <div className="flex items-center gap-1.5">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-[#8E89A6]" />
+                  <input
+                    type="text"
+                    value={layerSearch}
+                    onChange={(e) => setLayerSearch(e.target.value)}
+                    placeholder="搜索图层名…"
+                    aria-label="搜索图层"
+                    className="w-full rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] py-1.5 pl-7 pr-6 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                  />
+                  {layerSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLayerSearch('')}
+                      aria-label="清空图层搜索"
+                      className="absolute right-1.5 top-1.5 rounded p-0.5 text-[#8E89A6] hover:text-[#1A172B]"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={layerTypeFilter}
+                  onChange={(e) =>
+                    setLayerTypeFilter(
+                      e.target.value as 'all' | 'time' | 'text' | 'media' | 'shape' | 'widget'
+                    )
+                  }
+                  aria-label="按类型筛选图层"
+                  className="shrink-0 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2 py-1.5 text-[11px] font-medium text-[#56526B] focus:border-[#5E45F8] focus:outline-none"
+                >
+                  <option value="all">全部</option>
+                  <option value="time">时间日期</option>
+                  <option value="text">文字</option>
+                  <option value="media">图片视频</option>
+                  <option value="shape">形状</option>
+                  <option value="widget">组件特效</option>
+                </select>
+              </div>
+
+              {currentElements.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#DAD6F0] py-8 text-center text-[11.5px] text-[#6B6880]">
+                  画布暂无前景图层，可从左侧「添加」或「素材」插入元素。
+                </div>
+              ) : isFiltering ? (
+                filteredFlatElements.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[#DAD6F0] py-6 text-center text-[11.5px] text-[#6B6880]">
+                    <div>没有匹配的图层</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayerSearch('');
+                        setLayerTypeFilter('all');
+                      }}
+                      className="mt-1.5 text-[11px] font-semibold text-[#5E45F8] hover:underline"
+                    >
+                      重置筛选
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredFlatElements.map((el) => renderElementRow(el, 'filter', false))}
+                  </div>
+                )
+              ) : (
+                <div className="space-y-1">
+                  {topNodes.map((node) => {
+                    if (node.type === 'single') {
+                      return renderElementRow(node.el, 'top', false);
+                    }
+                    const memberIds = node.members.map((m) => m.id);
+                    const allMembersSelected =
+                      memberIds.length > 0 && memberIds.every((id) => selectedIds.includes(id));
+                    const anyMemberSelected = memberIds.some((id) => selectedIds.includes(id));
+                    const allHidden = node.members.every((m) =>
+                      isElementHidden(project, layoutIndex, m)
+                    );
+                    const allLocked = node.members.every((m) => Boolean(project.locks[m.id]));
+                    const isCollapsed = Boolean(collapsedGroups[node.gid]);
+                    const grpDropPos =
+                      dropTarget?.key === node.key && dropTarget.scope === 'top'
+                        ? dropTarget.pos
+                        : null;
+
+                    return (
+                      <div
+                        key={node.key}
+                        className={`rounded-xl border ${
+                          anyMemberSelected ? 'border-[#D9D2FF] bg-[#F8F6FF]' : 'border-[#E6E4F2]/80 bg-[#FAF9FE]'
+                        } ${dragItem?.key === node.key ? 'opacity-40' : ''} ${
+                          grpDropPos === 'before'
+                            ? 'border-t-2 border-t-[#5E45F8]'
+                            : grpDropPos === 'after'
+                              ? 'border-b-2 border-b-[#5E45F8]'
+                              : ''
+                        }`}
+                      >
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', node.key);
+                            setDragItem({ key: node.key, scope: 'top' });
+                          }}
+                          onDragOver={(e) => {
+                            if (!dragItem || dragItem.scope !== 'top' || dragItem.key === node.key) return;
+                            e.preventDefault();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+                            if (dropTarget?.key !== node.key || dropTarget.pos !== pos) {
+                              setDropTarget({ key: node.key, scope: 'top', pos });
+                            }
+                          }}
+                          onDrop={(e) => {
+                            if (!dragItem || dragItem.scope !== 'top') return;
+                            e.preventDefault();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+                            handleDropReorder(node.key, 'top', pos);
+                          }}
+                          onDragEnd={() => {
+                            setDragItem(null);
+                            setDropTarget(null);
+                          }}
+                          onClick={() => {
+                            if (onSelectLayers) {
+                              onSelectLayers(memberIds);
+                            } else {
+                              onSelectLayer(memberIds[0], false);
+                            }
+                          }}
+                          onContextMenu={(e) => {
+                            if (!onContextMenuLayer) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onContextMenuLayer(e, memberIds);
+                          }}
+                          className={`group flex cursor-pointer items-center gap-1.5 rounded-xl px-1.5 py-1.5 text-[12px] ${
+                            allMembersSelected ? 'bg-[#EFEBFD]/75 font-semibold text-[#1A172B]' : ''
+                          } ${allHidden ? 'opacity-50' : ''}`}
+                        >
+                          <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-[#B8B2CE] opacity-60 group-hover:opacity-100" />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCollapsedGroups((prev) => ({
+                                ...prev,
+                                [node.gid]: !prev[node.gid],
+                              }));
+                            }}
+                            aria-label={isCollapsed ? '展开组合' : '折叠组合'}
+                            className="rounded p-0.5 text-[#6B6880] hover:bg-white hover:text-[#5E45F8]"
+                          >
+                            {isCollapsed ? (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <Folder className="h-3.5 w-3.5 shrink-0 text-[#5E45F8]" />
+                          <span className="min-w-0 flex-1 truncate font-semibold text-[#1A172B]">
+                            组合 · {node.gid.slice(-4)} ({node.members.length})
+                          </span>
+                          <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleHide(memberIds);
+                              }}
+                              title={allHidden ? '显示组合' : '隐藏组合'}
+                              className="rounded p-1 text-[#6B6880] hover:bg-white hover:text-[#1A172B]"
+                            >
+                              {allHidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleLock(memberIds);
+                              }}
+                              title={allLocked ? '解锁组合' : '锁定组合'}
+                              className={`rounded p-1 hover:bg-white ${allLocked ? 'text-amber-600' : 'text-[#6B6880]'}`}
+                            >
+                              {allLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        </div>
+                        {!isCollapsed && (
+                          <div className="space-y-0.5 border-t border-[#E6E4F2]/70 py-1 pl-3 pr-1">
+                            {node.members.map((member) =>
+                              renderElementRow(member, `grp:${node.gid}`, true)
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Background Layer Row */}
+              <div className="border-t border-[#E6E4F2] pt-2">
+                <div
+                  onClick={onSelectBgLayer}
+                  className={`flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-[12px] ${
+                    selectedIds.length === 0
+                      ? 'border-[#5E45F8] bg-[#EFEBFD]/75 font-semibold text-[#1A172B]'
+                      : 'border-transparent hover:border-[#E6E4F2] hover:bg-[#F8F7FC]'
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5 text-[#6B6880]" />
+                  <span className="flex-1 truncate">背景层 ({project.bg.kind})</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMutateBg((b) => ({ ...b, hide: !b.hide }));
+                    }}
+                    title={project.bg.hide ? '显示背景' : '隐藏背景'}
+                    className="rounded p-1 text-[#6B6880] hover:bg-white"
+                  >
+                    {project.bg.hide ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Multi-Device Template Preview Modal */}
