@@ -1,3 +1,4 @@
+import { matchesDeviceSize } from '../utils/deviceContent';
 import React, { useState } from 'react';
 import { X, Search } from 'lucide-react';
 import { ContentCategory, DeviceInfo, ThemeItem } from '../data/themes';
@@ -27,8 +28,12 @@ export const ContentPickerModal: React.FC<ContentPickerModalProps> = ({
   if (!open) return null;
 
   const isPortrait = activeDevice.orientation === 'portrait';
+  const width = isPortrait ? activeDevice.nativeHeight : activeDevice.nativeWidth;
+  const height = isPortrait ? activeDevice.nativeWidth : activeDevice.nativeHeight;
 
   const list = themes.filter((t) => {
+    if (t.deletedAt || t.inLibrary === false) return false;
+    if (!matchesDeviceSize(t, activeDevice)) return false;
     if (tab !== '全部' && t.category !== tab) return false;
     if (
       query.trim() !== '' &&
@@ -48,15 +53,15 @@ export const ContentPickerModal: React.FC<ContentPickerModalProps> = ({
       aria-label="选择并更换副屏内容"
     >
       <div
-        className={`w-full overflow-hidden rounded-[26px] border border-white/60 bg-[#F7F7FC] shadow-[0_30px_80px_rgba(20,10,60,0.3)] ${
+        className={`flex max-h-[calc(100dvh-32px)] w-full flex-col overflow-hidden rounded-[26px] border border-white/60 bg-[#F7F7FC] shadow-[0_30px_80px_rgba(20,10,60,0.3)] ${
           isPortrait ? 'max-w-4xl' : 'max-w-3xl'
         }`}
       >
-        <div className="flex items-center justify-between border-b border-[#ECEAF6] bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-[#ECEAF6] bg-white px-6 py-4">
           <div>
             <h3 className="text-[17px] font-bold text-[#1A172B]">更换副屏内容</h3>
             <p className="text-[12px] text-[#7A7690]">
-              选择壁纸或动态时钟立即输出至 {activeDevice.name}（{activeDevice.resolution}）
+              选择适配内容立即输出至 {activeDevice.name}（{activeDevice.resolution}）
             </p>
           </div>
           <button
@@ -69,7 +74,7 @@ export const ContentPickerModal: React.FC<ContentPickerModalProps> = ({
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-4">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-6 pt-4">
           <div className="flex items-center rounded-xl bg-white p-1 shadow-sm">
             {(['全部', '动态时钟', '壁纸', '主题', '视频'] as const).map((cat) => (
               <button
@@ -98,12 +103,13 @@ export const ContentPickerModal: React.FC<ContentPickerModalProps> = ({
         </div>
 
         <div
-          className={`grid max-h-[520px] gap-4 overflow-y-auto p-6 studio-scroll ${
+          className={`grid min-h-0 max-h-[520px] content-start items-start gap-4 overflow-y-auto p-6 studio-scroll ${
             isPortrait
               ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
               : 'grid-cols-1 sm:grid-cols-2'
           }`}
         >
+          {list.length === 0 && <p className="col-span-full py-10 text-center text-sm text-[#7A7690]">当前尺寸下暂无匹配内容，可切换分类或清除搜索后查看。</p>}
           {list.map((item) => {
             const isSelected = item.id === activeThemeId;
             const handleSelect = (selected: ThemeItem) => {
@@ -113,14 +119,16 @@ export const ContentPickerModal: React.FC<ContentPickerModalProps> = ({
 
             if (isPortrait) {
               return (
+                <div key={item.id} className="mx-auto w-full"
+                  style={{ maxWidth: `min(100%, calc(min(360px, 50dvh) * ${width / height}))` }}>
                 <PortraitPosterCard
-                  key={item.id}
                   item={item}
                   activeDevice={activeDevice}
                   isCurrent={isSelected}
                   onApply={handleSelect}
                   subtitleExtra={activeDevice.resolution}
                 />
+                </div>
               );
             }
 

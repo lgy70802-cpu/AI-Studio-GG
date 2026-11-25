@@ -1,3 +1,4 @@
+import { matchesDeviceSize } from '../utils/deviceContent';
 import { importVideo } from '../services/desktopBridge';
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
@@ -30,8 +31,6 @@ import { PortraitPosterCard } from './PortraitPosterCard';
 interface LibraryManagerViewProps {
   searchQuery: string;
   onClearSearch: () => void;
-  trashedThemes: ThemeItem[];
-  onRestoreThemes: (ids: string[]) => void;
   themes: ThemeItem[];
   activeTheme: ThemeItem;
   activeDevice: DeviceInfo;
@@ -78,7 +77,7 @@ function readPreferences() {
 }
 export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
   themes,
-  trashedThemes, onRestoreThemes, searchQuery, onClearSearch,
+  searchQuery, onClearSearch,
   activeTheme,
   activeDevice,
   categoryFilter,
@@ -97,11 +96,11 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
   onNavigateOnline,
   onNotify,
 }) => {
+  const [sizeFilter, setSizeFilter] = useState<'exact' | 'direction' | 'all'>('exact');
   const [sourceFilter, setSourceFilter] = useState<'all' | ThemeSource>(() => readPreferences().sourceFilter ?? 'all');
   const [onlyFavs, setOnlyFavs] = useState(() => Boolean(readPreferences().onlyFavs));
   const [librarySort, setLibrarySort] = useState<'frequent' | 'newest-added' | 'most-used'>(() => readPreferences().librarySort ?? 'frequent');
 
-  const [trashOpen, setTrashOpen] = useState(false);
   const [importProgress, setImportProgress] = useState('正在读取素材…');
   const [importing, setImporting] = useState(false);
   useEffect(() => {
@@ -109,6 +108,14 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
   }, [sourceFilter, onlyFavs, librarySort]);
   const [batchMode, setBatchMode] = useState(false);
   const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
+  useEffect(() => {
+    setSizeFilter('exact');
+    setBatchSelectedIds([]);
+    setPreviewItem(null);
+  }, [activeDevice.id, activeDevice.serial, activeDevice.orientation, activeDevice.nativeWidth, activeDevice.nativeHeight]);
+  useEffect(() => {
+    setBatchSelectedIds([]);
+  }, [sizeFilter, sourceFilter, categoryFilter, onlyFavs, searchQuery]);
   const [targetPlaylistId, setTargetPlaylistId] = useState<string>(activePlaylistId || '');
 
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -144,6 +151,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
   const filtered = useMemo(() => {
     return libraryItems
       .filter((item) => {
+        if (sizeFilter !== 'all' && !matchesDeviceSize(item, activeDevice, sizeFilter)) return false;
         if (categoryFilter !== '全部' && item.category !== categoryFilter) return false;
         if (sourceFilter !== 'all' && (item.source ?? 'official') !== sourceFilter) return false;
         if (onlyFavs && !item.isFavorite) return false;
@@ -160,7 +168,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
         if (recentDiff !== 0) return recentDiff;
         return (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0);
       });
-  }, [libraryItems, categoryFilter, sourceFilter, onlyFavs, librarySort]);
+  }, [libraryItems, categoryFilter, sourceFilter, onlyFavs, librarySort, sizeFilter, activeDevice]);
 
   const getCardSubtitleExtra = (item: ThemeItem) => {
     const srcTag = SOURCE_LABELS[item.source ?? 'official'];
@@ -294,24 +302,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
         onChange={(e) => void handleFilesSelected(e.target.files)}
       />
 
-      {trashOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="回收站">
-          <div className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-bold">回收站</h2>
-              <button aria-label="关闭回收站" onClick={() => setTrashOpen(false)}><X className="h-5 w-5" /></button>
-            </div>
-            {trashedThemes.length === 0 ? <p className="py-10 text-center text-sm text-gray-500">回收站为空</p> : <>
-              <button className="my-4 rounded-xl bg-violet-600 px-4 py-2 text-sm text-white" onClick={() => onRestoreThemes(trashedThemes.map(t => t.id))}>全部恢复</button>
-              {trashedThemes.map(theme => <div key={theme.id} className="flex items-center gap-3 border-t py-3">
-                <img src={theme.thumbnailUrl ?? theme.imageUrl} alt="" className="h-14 w-24 rounded-lg bg-black object-contain" />
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{theme.displayName}</p><p className="text-xs text-gray-500">{new Date(theme.deletedAt!).toLocaleString()}</p></div>
-                <button className="rounded-xl bg-violet-50 px-3 py-2 text-sm text-violet-700" onClick={() => onRestoreThemes([theme.id])}>恢复</button>
-              </div>)}
-            </>}
-          </div>
-        </div>
-      )}
+
       {importing && <div role="status" className="fixed right-6 top-14 z-[100] rounded-xl bg-white px-4 py-2 text-sm shadow-lg">{importProgress}</div>}      {/* Drag & Drop File Overlay */}
       {isDraggingFiles && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#140B36]/45 p-6 backdrop-blur-xs pointer-events-none">
@@ -335,7 +326,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
             <h2 className="text-[20px] font-bold tracking-tight text-[#1A172B]">我的资源库</h2>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12.5px] text-[#7A7690]">
               <span>
-                共 <strong className="font-mono-tabular text-[#1A172B]">{stats.total}</strong> 项个人素材
+                共 <strong className="font-mono-tabular text-[#1A172B]">{stats.total}</strong> 项个人素材 · {sizeFilter === 'exact' ? '当前尺寸' : sizeFilter === 'direction' ? '同向' : '全部尺寸'} {filtered.length} 项
               </span>
               <span aria-hidden="true">·</span>
               <span>已收藏 {stats.favCount} 项</span>
@@ -380,11 +371,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
           </div>
         </div>
 
-        <div className="mt-3 flex justify-end">
-          <button type="button" onClick={() => setTrashOpen(true)} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs text-[#6B6880] hover:bg-violet-50">
-            <Trash2 className="h-3.5 w-3.5" />回收站 ({trashedThemes.length})
-          </button>
-        </div>        {/* Tier 2: Source, Category, Sort & Favorites Filters */}
+        {/* Tier 2: Source, Category, Sort & Favorites Filters */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#F1EFF8] pt-3.5">
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Source Filter */}
@@ -485,6 +472,11 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
             >
               <Star className="h-3.5 w-3.5" fill={onlyFavs ? 'currentColor' : 'none'} />
               <span>仅看收藏</span>
+            </button>
+            <button type="button" aria-label={sizeFilter === 'exact' ? '显示同向' : sizeFilter === 'direction' ? '显示全部' : '显示当前'} onClick={() => setSizeFilter(value => value === 'exact' ? 'direction' : value === 'direction' ? 'all' : 'exact')}
+              title="依次切换当前尺寸、同向素材和全部尺寸"
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold transition-colors ${sizeFilter !== 'exact' ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'bg-[#F5F4FA] text-[#6B6880] hover:bg-[#EFEBFD]'}`}>
+              {sizeFilter === 'exact' ? '显示同向' : sizeFilter === 'direction' ? '显示全部' : '显示当前'}
             </button>
           </div>
         </div>
@@ -595,12 +587,12 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
         <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-[#DAD6F0] bg-white/85 px-6 py-16 text-center">
           <FolderOpen className="h-10 w-10 text-[#9C94C9]" />
           <h3 className="mt-3 text-[16px] font-bold text-[#1A172B]">
-            {hasFilters ? '当前筛选条件下暂无匹配素材' : '我的资源库暂无内容'}
+            {hasFilters ? '当前筛选条件下暂无匹配素材' : sizeFilter !== 'all' && libraryItems.length > 0 ? '当前尺寸下暂无适配素材' : '我的资源库暂无内容'}
           </h3>
           <p className="mt-1 max-w-md text-[13px] text-[#7A7690]">
             {hasFilters
               ? '你可以重置筛选条件查看全部已入库内容，或者导入新的本地图片素材。'
-              : '支持拖拽或点击导入电脑里的壁纸图片，也可以前往在线资源广场下载官方动态时钟与主题。'}
+              : sizeFilter !== 'all' && libraryItems.length > 0 ? '可切换“显示同向”或“显示全部”，查看其他尺寸的素材并进入编辑器适配。' : '支持拖拽或点击导入电脑里的壁纸图片，也可以前往在线资源广场下载官方动态时钟与主题。'}
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
             {hasFilters && (

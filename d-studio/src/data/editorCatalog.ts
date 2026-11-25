@@ -1833,6 +1833,21 @@ export function ensureEditorProjectFromTheme(
     name: theme.displayName,
     category: theme.category === '动态时钟' ? '动态时钟' : '主题',
   });
+  if (theme.source === 'local' && (theme.imageUrl || theme.videoUrl)) {
+    const [cw, ch] = base.layouts[0].size;
+    const width = theme.sourceWidth || cw;
+    const height = theme.sourceHeight || ch;
+    const box = computeImportMediaBox(width, height, cw, ch);
+    const media = {
+      w: box.w, h: box.h, ar: box.ar, size: box.size, fit: box.fit,
+      sourceMeta: { origin: 'library' as const, naturalWidth: width, naturalHeight: height, name: theme.displayName },
+    };
+    base.master = theme.videoUrl
+      ? [makeElement('video', { ...media, src: theme.videoUrl, poster: theme.thumbnailUrl ?? theme.imageUrl, dur: theme.durationSeconds ?? 0 })]
+      : [makeElement('image', { ...media, src: theme.imageUrl! })];
+    base.template_id = theme.id;
+    return base;
+  }
   if (theme.imageUrl) {
     base.bg = {
       kind: 'image',

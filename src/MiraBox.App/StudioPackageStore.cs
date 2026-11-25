@@ -59,7 +59,7 @@ internal sealed class StudioPackageStore(string root, string webRoot)
                 if (!File.Exists(Path.Combine(root, name))) continue;
                 var data = JsonNode.Parse(File.ReadAllText(Path.Combine(root, name)))!;
                 if (name == "desktop-state.json")
-                    foreach (var device in data["Devices"]!.AsArray())
+                    foreach (var device in data["Devices"]!.AsArray().Concat(data["OrientationOutputs"]?.AsArray() ?? new JsonArray()))
                     {
                         foreach (var field in new[] { "ImageFile", "ThemeFile" })
                         {

@@ -296,7 +296,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   latestProject.current = project;
   const saving = useRef(false);
   const [layoutIndex, setLayoutIndex] = useState<number>(0);
-  const [activeRailTab, setActiveRailTab] = useState<EditorRailTab>('templates');
+  const [activeRailTab, setActiveRailTab] = useState<EditorRailTab>('add');
   const [leftCollapsed, setLeftCollapsed] = useState<boolean>(false);
   const [rightCollapsed, setRightCollapsed] = useState<boolean>(false);
 
@@ -2582,13 +2582,13 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   }, [canvasPxH, canvasPxW, project, sourceThemeId, themes]);
 
   const handleSave = async (applyNow: boolean) => {
-    if (saving.current) return;
+    if (saving.current) return false;
     saving.current = true;
     const submitted = project;
     const out = buildThemeItem();
     try {
       const result = await (applyNow ? onSaveAndApply(out, out.editorProject!) : onSaveOnly(out, out.editorProject!));
-      if (result === false || latestProject.current !== submitted) return;
+      if (result === false || latestProject.current !== submitted) return false;
     try {
       localStorage.removeItem(draftStorageKey);
     } catch {
@@ -2596,8 +2596,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     }
     setIsDirty(false);
     setDraftSavedAt(null);
+    return true;
     } catch (error) {
       onNotify('保存失败：' + (error as Error).message);
+      return false;
     } finally { saving.current = false; }
   };
 
@@ -2727,7 +2729,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               if (isDirty) setExitConfirmOpen(true);
               else onExitEditor();
             }}
-            title="返回创作中心"
+            title="返回上一页"
             className="flex h-8 shrink-0 items-center gap-1 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 text-[12px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8] whitespace-nowrap"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -3315,7 +3317,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                 <>
                   <div
                     className="pointer-events-none absolute -top-5 left-0 flex h-4 items-end justify-between border-b border-[#DAD6F0] px-1 font-mono-tabular text-[9px] text-[#6B6880]"
-                    style={{ width: `${Math.round(canvasPxW * effectiveZoom)}px` }}
+                    style={{ width: `${canvasPxW * effectiveZoom}px` }}
                   >
                     <span>0</span>
                     <span>{Math.round(canvasPxW * 0.25)}</span>
@@ -3325,7 +3327,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                   </div>
                   <div
                     className="pointer-events-none absolute -left-7 top-0 flex w-6 flex-col items-end justify-between border-r border-[#DAD6F0] pr-1 font-mono-tabular text-[9px] text-[#6B6880]"
-                    style={{ height: `${Math.round(canvasPxH * effectiveZoom)}px` }}
+                    style={{ height: `${canvasPxH * effectiveZoom}px` }}
                   >
                     <span>0</span>
                     <span>{Math.round(canvasPxH * 0.5)}</span>
@@ -3339,10 +3341,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                 ref={canvasRef}
                 data-te-canvas="true"
                 style={{
-                  width: `${Math.round(canvasPxW * effectiveZoom)}px`,
-                  height: `${Math.round(canvasPxH * effectiveZoom)}px`,
+                  width: `${canvasPxW * effectiveZoom}px`,
+                  height: `${canvasPxH * effectiveZoom}px`,
                 }}
-                className="relative overflow-hidden rounded-xl border border-[#DAD6F0] bg-[#0B061D] shadow-[0_24px_60px_rgba(24,10,68,0.26)]"
+                className="relative overflow-hidden rounded-xl ring-1 ring-[#DAD6F0] bg-[#0B061D] shadow-[0_24px_60px_rgba(24,10,68,0.26)]"
               >
                 <EditorArtworkRenderer
                   project={project}
@@ -4236,10 +4238,12 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setExitConfirmOpen(false);
-                  handleSave(false);
-                  onExitEditor();
+                onClick={async () => {
+                  const saved = await handleSave(false);
+                  if (saved) {
+                    setExitConfirmOpen(false);
+                    onExitEditor();
+                  }
                 }}
                 className="rounded-xl bg-[#5E45F8] px-4 py-1.5 text-[12px] font-bold text-white hover:bg-[#4D34E6]"
               >

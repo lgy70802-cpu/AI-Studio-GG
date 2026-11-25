@@ -15,7 +15,7 @@
   body {
     font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
     color: var(--ds-text-primary);
-    background-color: #e4def9;
+    background-color: var(--ds-surface);
     margin: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -118,3 +118,8 @@
   50% { background-position: 100% 50%; }
 }
 
+
+/* Let the workspace header act as the native window caption. */
+.desktop-titlebar { app-region: drag; }
+.desktop-titlebar button, .desktop-titlebar input,
+.desktop-titlebar [role="dialog"] { app-region: no-drag; }

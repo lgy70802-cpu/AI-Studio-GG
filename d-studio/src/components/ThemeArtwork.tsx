@@ -46,7 +46,7 @@ export const ThemeArtwork: React.FC<ThemeArtworkProps> = ({
     <div className={`relative overflow-hidden bg-black ${className}`}>
       {theme.imageUrl && <img src={compact ? theme.thumbnailUrl ?? theme.imageUrl : theme.imageUrl} alt={theme.displayName}
         className="h-full w-full object-contain"
-        style={{ transform: theme.desktopFlipped ? 'rotate(180deg)' : undefined, filter: theme.desktopBrightness == null ? undefined : `brightness(${theme.desktopBrightness}%)` }} />}
+        style={{ filter: theme.desktopBrightness == null ? undefined : `brightness(${theme.desktopBrightness}%)` }} />}
     </div>
   );
   if (theme.editorProject) {
@@ -226,7 +226,7 @@ export const ThemeArtwork: React.FC<ThemeArtworkProps> = ({
   }
 
   return (
-    <div className={`relative overflow-hidden bg-[#1A1436] ${className}`}>
+    <div className={`relative overflow-hidden ${theme.imageUrl && !imgError ? 'bg-transparent' : 'bg-[#1A1436]'} ${className}`}>
       {theme.imageUrl && !imgError ? (
         <img
           src={theme.imageUrl}

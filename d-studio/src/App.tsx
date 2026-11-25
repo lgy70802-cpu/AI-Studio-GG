@@ -1,4 +1,4 @@
-import { desktopMode, scanDevices, outputImage, configureDevice, selectDesktopDevice, loadLibrary, saveLibrary, playlistCommand, readViewedPlaylists, applyMedia, devicePower, previewTheme as previewDesktopTheme, endThemePreview, enableSchedules, runSchedule, resetSchedule, ScheduleRuntime } from './services/desktopBridge';
+import { desktopMode, scanDevices, outputImage, configureDevice, selectDesktopDevice, loadLibrary, saveLibrary, playlistCommand, readViewedPlaylists, applyMedia, devicePower, previewTheme as previewDesktopTheme, endThemePreview, enableSchedules, runSchedule, resetSchedule, ScheduleRuntime, OrientationUse } from './services/desktopBridge';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   ChevronLeft,
@@ -98,6 +98,7 @@ export default function App() {
     project: EditorThemeProject;
     sourceThemeId?: string;
   } | null>(null);
+  const editorReturnNav = useRef<NavSection>('creator');
   const [editorSidebarMode, setEditorSidebarMode] = useState<SidebarMode>('hidden');
   const [tempPreview, setTempPreview] = useState<{
     scopeKey: string;
@@ -107,6 +108,8 @@ export default function App() {
     previewTheme: ThemeItem;
     remainingSec: number;
   } | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const trashedThemes = themes.filter(t => Boolean(t.deletedAt));
   const [toast, setToast] = useState<{
     id: number;
     message: string;
@@ -121,9 +124,11 @@ export default function App() {
   const [scheduleRuntime, setScheduleRuntime] = useState<ScheduleRuntime | null>(null);
   const [desktopReady, setDesktopReady] = useState(!desktopMode);
   const desktopSelectionLoaded = useRef(false);
+  const [orientationHistory, setOrientationHistory] = useState<OrientationUse[]>([]);
   const refreshDesktop = useCallback(async () => {
     const snapshot = await scanDevices();
     setDevices(snapshot.devices);
+    setOrientationHistory(snapshot.orientationHistory ?? []);
     if (snapshot.scheduling) { setScheduleRuntime(snapshot.scheduling); setSchedulesEnabled(snapshot.scheduling.enabled); }
     if (!desktopSelectionLoaded.current) {
       setActiveDeviceId(snapshot.selected ?? snapshot.devices[0]?.id ?? '');
@@ -1215,11 +1220,17 @@ export default function App() {
 
   const handleEditInStudio = useCallback(
     (theme: ThemeItem) => {
-      const proj = ensureEditorProjectFromTheme(theme, activeDevice);
+      editorReturnNav.current = activeNav;
+      const source = themes.find(item => item.id === theme.id);
+      if (theme.desktopStatic && !source) {
+        notify('找不到当前内容的源工程，请从资源库选择素材后编辑。');
+        return;
+      }
+      const proj = ensureEditorProjectFromTheme(source ?? theme, activeDevice);
       setEditorSession({ project: proj, sourceThemeId: theme.id });
       setActiveNav('creator');
     },
-    [activeDevice]
+    [activeDevice, activeNav, themes, notify]
   );
 
   const handleToggleGlobalSchedules = useCallback(() => {
@@ -1619,14 +1630,10 @@ export default function App() {
 
   return (
     <div
-      className={
-        isInEditor
-          ? 'flex h-screen w-full items-stretch justify-center overflow-hidden bg-[#F7F7FC] p-0'
-          : 'studio-ambient-bg flex h-screen w-full items-stretch justify-center overflow-hidden p-2 sm:p-4 lg:p-5'
-      }
+      className="flex h-screen w-full overflow-hidden bg-[#F7F7FC]"
     >
       {desktopMode && (!libraryReady || librarySaving || libraryError) && (
-        <div role="status" className="fixed right-6 top-3 z-[100] rounded-xl bg-white px-4 py-2 text-xs shadow-lg">
+        <div role="status" className="fixed right-6 top-24 z-[100] rounded-xl bg-white px-4 py-2 text-xs shadow-lg">
           {libraryError || (libraryReady ? '正在保存资源库…' : '正在读取资源库…')}
           {libraryError && libraryReady && <button className="ml-3 text-violet-600" onClick={() => setLibraryRetry(v => v + 1)}>重试保存</button>}
           {!libraryReady && libraryError && <button className="ml-3 text-violet-600" onClick={() => location.reload()}>重新读取</button>}
@@ -1635,11 +1642,7 @@ export default function App() {
       {desktopMode && !libraryReady && <div className="fixed inset-0 z-[90] bg-white/50" />}
       {/* Main Frosted Glass Desktop App Shell (Full-viewport edge-to-edge in Editor) */}
       <div
-        className={
-          isInEditor
-            ? 'relative flex h-full w-full overflow-hidden bg-[#F7F7FC]'
-            : 'relative flex h-full w-full max-w-[1440px] overflow-hidden rounded-[28px] border border-white/80 bg-[#F7F7FC]/92 shadow-[0_30px_90px_rgba(45,28,110,0.13)] backdrop-blur-2xl'
-        }
+        className="relative flex h-full w-full overflow-hidden bg-[#F7F7FC]"
       >
         {/* Left Navigation Rail */}
         <Sidebar
@@ -1711,6 +1714,8 @@ export default function App() {
             onSelectNav={setActiveNav}
             onOpenMobileMenu={() => setMobileMenuOpen(true)}
             recentLogs={recentLogs}
+            onOpenTrash={() => setTrashOpen(true)}
+            trashCount={trashedThemes.length}
           />
 
           {/* Temporary Device Preview Banner (15s auto-restore) */}
@@ -1820,6 +1825,11 @@ export default function App() {
             {activeNav === 'home' ? (
               <HomeDashboard
                 themes={themesWithPlaylist}
+                recentItems={desktopMode ? orientationHistory
+                  .filter(h => h.Serial === activeDevice.serial && h.Portrait === (activeDevice.orientation === 'portrait'))
+                  .sort((a, b) => b.UsedAt - a.UsedAt)
+                  .map(h => themesWithPlaylist.find(t => t.id === h.ThemeId && !t.deletedAt))
+                  .filter((t): t is ThemeItem => Boolean(t)) : undefined}
                 activeTheme={effectiveActiveTheme}
                 activeDevice={activeDevice}
                 isPlaying={isPlaying}
@@ -1834,12 +1844,11 @@ export default function App() {
                 onPrevTheme={handlePrevTheme}
                 onNextTheme={handleNextTheme}
                 onOpenPicker={() => setPickerOpen(true)}
+                onEditTheme={handleEditInStudio}
                 onSelectNav={setActiveNav}
               />
             ) : (
               <SecondaryViews
-                trashedThemes={themes.filter(t => Boolean(t.deletedAt))}
-                onRestoreThemes={handleRestoreThemes}
                 searchQuery={searchQuery}
                 onClearSearch={() => setSearchQuery('')}
                 section={activeNav}
@@ -1857,10 +1866,14 @@ export default function App() {
                 editorSession={editorSession}
                 editorSidebarMode={editorSidebarMode}
                 onChangeEditorSidebarMode={setEditorSidebarMode}
-                onEnterEditor={(proj, srcId) =>
-                  setEditorSession({ project: proj, sourceThemeId: srcId })
-                }
-                onExitEditor={() => setEditorSession(null)}
+                onEnterEditor={(proj, srcId) => {
+                  editorReturnNav.current = activeNav;
+                  setEditorSession({ project: proj, sourceThemeId: srcId });
+                }}
+                onExitEditor={() => {
+                  setEditorSession(null);
+                  setActiveNav(editorReturnNav.current);
+                }}
                 onSaveEditorTheme={handleSaveEditorTheme}
                 onStartTempPreview={handleStartTempPreview}
                 onDeleteCustomTheme={(id) => handleRemoveFromLibrary([id])}
@@ -2022,6 +2035,25 @@ export default function App() {
           </footer>
         </div>
       </div>
+
+      {trashOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="回收站">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-bold">回收站</h2>
+              <button aria-label="关闭回收站" onClick={() => setTrashOpen(false)}><X className="h-5 w-5" /></button>
+            </div>
+            {trashedThemes.length === 0 ? <p className="py-10 text-center text-sm text-gray-500">回收站为空</p> : <>
+              <button className="my-4 rounded-xl bg-violet-600 px-4 py-2 text-sm text-white" onClick={() => handleRestoreThemes(trashedThemes.map(t => t.id))}>全部恢复</button>
+              {trashedThemes.map(theme => <div key={theme.id} className="flex items-center gap-3 border-t py-3">
+                <img src={theme.thumbnailUrl ?? theme.imageUrl} alt="" className="h-14 w-24 rounded-lg bg-black object-contain" />
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{theme.displayName}</p><p className="text-xs text-gray-500">{new Date(theme.deletedAt!).toLocaleString()}</p></div>
+                <button className="rounded-xl bg-violet-50 px-3 py-2 text-sm text-violet-700" onClick={() => handleRestoreThemes([theme.id])}>恢复</button>
+              </div>)}
+            </>}
+          </div>
+        </div>
+      )}
 
       {/* Content Picker Modal */}
       <ContentPickerModal

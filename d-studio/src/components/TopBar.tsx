@@ -1,4 +1,4 @@
-import { desktopMode } from '../services/desktopBridge';
+import { desktopMode, controlWindow } from '../services/desktopBridge';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Search,
@@ -10,6 +10,10 @@ import {
   Check,
   User,
   Menu,
+  Trash2,
+  Minus,
+  Square,
+  X,
 } from 'lucide-react';
 import { ContentCategory, DeviceInfo, NavSection } from '../data/themes';
 
@@ -24,6 +28,8 @@ interface TopBarProps {
   onSelectNav: (nav: NavSection) => void;
   onOpenMobileMenu: () => void;
   recentLogs: string[];
+  onOpenTrash: () => void;
+  trashCount: number;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -37,6 +43,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onSelectNav,
   onOpenMobileMenu,
   recentLogs,
+  onOpenTrash,
+  trashCount,
 }) => {
   const [deviceOpen, setDeviceOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -71,7 +79,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <header
       ref={containerRef}
-      className="relative z-30 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 border-b border-[#ECEAF6] bg-white/60 px-6 py-4 backdrop-blur-md"
+      className={`${desktopMode ? 'desktop-titlebar' : ''} relative z-30 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 border-b border-[#ECEAF6] bg-white/60 px-6 py-4 backdrop-blur-md`}
     >
       {/* Left Zone: Mobile menu trigger + Device Dropdown Selector */}
       <div className="flex items-center gap-2.5 shrink-0">
@@ -314,9 +322,20 @@ export const TopBar: React.FC<TopBarProps> = ({
               >
                 偏好设置
               </button>
+              <button type="button" onClick={() => { setProfileOpen(false); onOpenTrash(); }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-medium text-[#4A4660] hover:bg-[#F5F2FF] hover:text-[#5E45F8]">
+                <Trash2 className="h-3.5 w-3.5" />回收站 ({trashCount})
+              </button>
             </div>
           )}
         </div>
+        {desktopMode && (
+          <div className="ml-1 flex shrink-0 items-center gap-2.5 border-l border-[#ECEAF6] pl-3">
+            <button type="button" aria-label="最小化" title="最小化" onClick={() => controlWindow('minimize')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ECEAF6] bg-white text-[#56526B] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] hover:border-[#C8BDFC] hover:bg-[#F5F2FF] hover:text-[#5E45F8]"><Minus className="h-4 w-4" /></button>
+            <button type="button" aria-label="最大化或还原" title="最大化或还原" onClick={() => controlWindow('maximize')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ECEAF6] bg-white text-[#56526B] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] hover:border-[#C8BDFC] hover:bg-[#F5F2FF] hover:text-[#5E45F8]"><Square className="h-3 w-3" /></button>
+            <button type="button" aria-label="关闭窗口" title="关闭" onClick={() => controlWindow('close')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ECEAF6] bg-white text-[#56526B] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] hover:border-[#F3C7D0] hover:bg-[#FFF1F3] hover:text-[#D74764]"><X className="h-4 w-4" /></button>
+          </div>
+        )}
       </div>
     </header>
   );

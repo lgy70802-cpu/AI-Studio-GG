@@ -53,7 +53,7 @@ public sealed partial class StudioWindow : Window
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnSystemPower;
         Title = "MiraBox Studio";
         Width = 1440; Height = 940; MinWidth = 720; MinHeight = 640;
-        Content = browser;
+        InitializeWindowFrame();
         Loaded += async (_, _) =>
         {
             try
@@ -64,6 +64,7 @@ public sealed partial class StudioWindow : Window
                 var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(dataRoot, "WebView2"), options);
                 webEnvironment = environment;
                 await browser.EnsureCoreWebView2Async(environment);
+                browser.CoreWebView2.Settings.IsNonClientRegionSupportEnabled = true;
                 browser.CoreWebView2.ProcessFailed += (_, failure) =>
                 {
                     Log(new { at = DateTimeOffset.Now, subsystem = "main-webview", kind = failure.ProcessFailedKind.ToString() });
@@ -121,7 +122,7 @@ public sealed partial class StudioWindow : Window
             Close();
         };
     }
-    internal sealed record Settings(string? Selected, bool Restore, SavedDevice[] Devices, StudioPlaylistProgress[]? PlaylistSessions = null);
+    internal sealed record Settings(string? Selected, bool Restore, SavedDevice[] Devices, StudioPlaylistProgress[]? PlaylistSessions = null, SavedDevice[]? OrientationOutputs = null, OrientationUse[]? OrientationHistory = null);
     void Load()
     {
         var path = Path.Combine(dataRoot, "desktop-state.json");
@@ -135,13 +136,19 @@ public sealed partial class StudioWindow : Window
             if (!restore) progress.Running = false;
             playlistProgress[progress.Serial] = progress;
         }
+        orientationOutputs.Clear();
+        orientationHistory.Clear();
+        foreach (var output in state.OrientationOutputs ?? []) orientationOutputs[(output.Serial, output.Portrait)] = output;
+        orientationHistory.AddRange(state.OrientationHistory ?? []);
         foreach (var device in state.Devices)
             saved.Add(device.Serial, restore ? device : device with { Playing = false });
+        RememberOrientationOutputs();
     }
     void Save()
     {
         var path = Path.Combine(dataRoot, "desktop-state.json");
-        var content = JsonSerializer.Serialize(new Settings(selected, restore, saved.Values.Select(d => temporaryThemes.TryGetValue(d.Serial, out var preview) ? preview.Previous : d).ToArray(), playlistProgress.Values.ToArray()));
+        RememberOrientationOutputs();
+        var content = JsonSerializer.Serialize(new Settings(selected, restore, saved.Values.Select(d => temporaryThemes.TryGetValue(d.Serial, out var preview) ? preview.Previous : d).ToArray(), playlistProgress.Values.ToArray(), orientationOutputs.Values.ToArray(), orientationHistory.ToArray()));
         if (content == lastSavedState) return;
         StudioAtomicFile.Write(path, content);
         lastSavedState = content;
@@ -299,6 +306,19 @@ public sealed partial class StudioWindow : Window
     async void Receive(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
         if (!Uri.TryCreate(args.Source, UriKind.Absolute, out var origin) || origin.Host != "studio.local") return;
+        using (var control = JsonDocument.Parse(args.WebMessageAsJson))
+        {
+            if (control.RootElement.TryGetProperty("command", out var kind) && kind.GetString() == "window-control")
+            {
+                switch (control.RootElement.GetProperty("action").GetString())
+                {
+                    case "minimize": WindowState = WindowState.Minimized; break;
+                    case "maximize": WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; break;
+                    case "close": Close(); break;
+                }
+                return;
+            }
+        }
         lastMainMessage = System.Diagnostics.Stopwatch.GetTimestamp();
         string? id = null;
         await commands.WaitAsync();
@@ -402,7 +422,7 @@ public sealed partial class StudioWindow : Window
             }
             else if (command == "devices")
             {
-                result = new { selected, restore, scheduling = ScheduleSnapshot(), devices = saved.Values.Select(d =>
+                result = new { selected, restore, orientationHistory, scheduling = ScheduleSnapshot(), devices = saved.Values.Select(d =>
                 {
                     var progress = playlistProgress.GetValueOrDefault(d.Serial);
                     var binding = progress == null ? null : FindPlaylist(progress.PlaylistId);
@@ -487,6 +507,17 @@ public sealed partial class StudioWindow : Window
                         Flipped = message.TryGetProperty("flipped", out var flipped) ? flipped.GetBoolean() : previous.Flipped,
                         Playing = message.TryGetProperty("playing", out var playing) ? playing.GetBoolean() : previous.Playing };
                 else throw new InvalidOperationException("未知设备操作。");
+                if (command == "configure" && next.Portrait != previous.Portrait &&
+                    orientationOutputs.TryGetValue((serial, next.Portrait), out var remembered) &&
+                    remembered.ThemeId != null)
+                {
+                    if (PlaylistImagePath(remembered.ThemeId) != null)
+                        next = PreparePlaylistImage(next, remembered.ThemeId) with { Flipped = remembered.Flipped, Playing = next.Playing };
+                    else if (remembered.ImageFile != null && File.Exists(ImagePath(remembered)))
+                        next = next with { ThemeId = remembered.ThemeId, ThemeName = remembered.ThemeName,
+                            ImageFile = remembered.ImageFile, ThemeFile = remembered.ThemeFile,
+                            VideoFile = remembered.VideoFile, Flipped = remembered.Flipped };
+                }
                 if (command == "configure" && next.Portrait == previous.Portrait && next.Flipped == previous.Flipped && themeSessions.TryGetValue(serial, out var themeOutput))
                 {
                     await themeOutput.Renderer.SetPaused(!next.Playing);

@@ -27,7 +27,8 @@ function request<T>(command: string, payload: object = {}): Promise<T> {
     }, 60000);
   });
 }
-export const scanDevices = () => request<{ selected?: string; restore: boolean; scheduling: ScheduleRuntime; devices: DeviceInfo[] }>('devices');
+export interface OrientationUse { Serial: string; Portrait: boolean; ThemeId: string; UsedAt: number }
+export const scanDevices = () => request<{ orientationHistory?: OrientationUse[]; selected?: string; restore: boolean; scheduling: ScheduleRuntime; devices: DeviceInfo[] }>('devices');
 export async function outputImage(device: DeviceInfo, source: string, themeId: string, themeName: string) {
   const response = await fetch(source);
   if (!response.ok) throw new Error('无法读取所选图片。');
@@ -113,3 +114,5 @@ export async function importVideo(file: File, progress: (percent: number) => voi
     throw error;
   }
 }
+
+export const controlWindow = (action: 'minimize' | 'maximize' | 'close') => bridge?.postMessage({ command: 'window-control', action });

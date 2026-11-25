@@ -42,7 +42,7 @@ export const PortraitPosterCard: React.FC<PortraitPosterCardProps> = ({
   return (
     <div
       style={{ aspectRatio }}
-      className={`group relative w-full overflow-hidden rounded-[20px] bg-[#160F30] shadow-[0_12px_28px_rgba(30,20,80,0.09)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_18px_36px_rgba(94,69,248,0.18)] ${
+      className={`group relative w-full overflow-hidden rounded-[20px] bg-transparent shadow-[0_12px_28px_rgba(30,20,80,0.09)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_18px_36px_rgba(94,69,248,0.18)] ${
         isCurrent ? 'ring-[2.5px] ring-[#5E45F8] ring-offset-2 ring-offset-[#F7F7FC]' : ''
       }`}
     >

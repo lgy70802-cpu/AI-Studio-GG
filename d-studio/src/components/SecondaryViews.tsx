@@ -45,8 +45,6 @@ interface SecondaryViewsProps {
   scheduleRuntime: ScheduleRuntime | null;
   searchQuery: string;
   onClearSearch: () => void;
-  trashedThemes: ThemeItem[];
-  onRestoreThemes: (ids: string[]) => void;
   section: Exclude<NavSection, 'home'>;
   themes: ThemeItem[];
   activeTheme: ThemeItem;
@@ -123,7 +121,7 @@ interface SecondaryViewsProps {
 
 export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
   onFlushLibrary,
-  scheduleRuntime, trashedThemes, onRestoreThemes, searchQuery, onClearSearch,
+  scheduleRuntime, searchQuery, onClearSearch,
   section,
   themes,
   activeTheme,
@@ -223,8 +221,6 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
       <LibraryManagerView
         searchQuery={searchQuery}
         onClearSearch={onClearSearch}
-        trashedThemes={trashedThemes}
-        onRestoreThemes={onRestoreThemes}
         themes={themes}
         activeTheme={activeTheme}
         activeDevice={activeDevice}

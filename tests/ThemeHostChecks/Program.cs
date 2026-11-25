@@ -47,6 +47,35 @@ internal static class Program
         theme["editorProject"]!["master"]![0]!["src"] = "blob:expired";
         try { store.Save(state); throw new Exception("blob accepted"); } catch (InvalidDataException) { }
         Check(File.ReadAllText(Path.Combine(root, "library-workspace.json")) == previous, "failed temporary asset save preserves prior index");
+
+        var savedDevices = (Dictionary<string, StudioWindow.SavedDevice>)typeof(StudioWindow).GetField("saved", flags)!.GetValue(window)!;
+        var save = typeof(StudioWindow).GetMethod("Save", flags)!;
+        savedDevices["orientation-test"] = new("orientation-test", "D92", ThemeId: "landscape-first");
+        save.Invoke(window, null);
+        savedDevices["orientation-test"] = savedDevices["orientation-test"] with { Portrait = true, ThemeId = "portrait-first" };
+        save.Invoke(window, null);
+        savedDevices["orientation-test"] = savedDevices["orientation-test"] with { Portrait = false, ThemeId = "landscape-latest" };
+        save.Invoke(window, null);
+        var stored = System.Text.Json.JsonSerializer.Deserialize<StudioWindow.Settings>(File.ReadAllText(Path.Combine(root, "desktop-state.json")))!;
+        Check(stored.OrientationOutputs!.Single(o => !o.Portrait).ThemeId == "landscape-latest" &&
+            stored.OrientationOutputs!.Single(o => o.Portrait).ThemeId == "portrait-first", "last output stored independently for both orientations");
+        Check(stored.OrientationHistory!.Where(h => !h.Portrait).Select(h => h.ThemeId).SequenceEqual(new[] { "landscape-latest", "landscape-first" }) &&
+            stored.OrientationHistory!.Where(h => h.Portrait).Single().ThemeId == "portrait-first", "recent histories remain separated and newest first");
+        save.Invoke(window, null);
+        var unchanged = System.Text.Json.JsonSerializer.Deserialize<StudioWindow.Settings>(File.ReadAllText(Path.Combine(root, "desktop-state.json")))!;
+        Check(unchanged.OrientationHistory!.Length == stored.OrientationHistory!.Length &&
+            unchanged.OrientationHistory[0].UsedAt == stored.OrientationHistory![0].UsedAt, "background saves do not duplicate or reorder recent history");
+        savedDevices.Clear();
+        typeof(StudioWindow).GetMethod("Load", flags)!.Invoke(window, null);
+        Check(savedDevices["orientation-test"].ThemeId == "landscape-latest", "orientation state loads after restart");
+        var oldState = new StudioWindow.Settings(null, true, [new("legacy-test", "D69", ThemeId: "legacy")]);
+        File.WriteAllText(Path.Combine(root, "desktop-state.json"), System.Text.Json.JsonSerializer.Serialize(oldState));
+        savedDevices.Clear();
+        typeof(StudioWindow).GetMethod("Load", flags)!.Invoke(window, null);
+        save.Invoke(window, null);
+        var migrated = System.Text.Json.JsonSerializer.Deserialize<StudioWindow.Settings>(File.ReadAllText(Path.Combine(root, "desktop-state.json")))!;
+        Check(migrated.OrientationOutputs!.Single().ThemeId == "legacy", "legacy device state seeds its current orientation");
+
         Console.WriteLine(count + " checks passed"); Console.Out.Flush(); Environment.Exit(0);
     }
 }

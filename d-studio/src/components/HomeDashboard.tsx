@@ -8,6 +8,7 @@ import {
   Image as ImageIcon,
   Sun,
   FlipHorizontal2,
+  Pencil,
 } from 'lucide-react';
 import {
   DeviceInfo,
@@ -22,6 +23,7 @@ import { PortraitPosterCard } from './PortraitPosterCard';
 import { LandscapePosterCard } from './LandscapePosterCard';
 
 interface HomeDashboardProps {
+  recentItems?: ThemeItem[];
   themes: ThemeItem[];
   activeTheme: ThemeItem;
   activeDevice: DeviceInfo;
@@ -37,11 +39,13 @@ interface HomeDashboardProps {
   onPrevTheme: () => void;
   onNextTheme: () => void;
   onOpenPicker: () => void;
+  onEditTheme: (theme: ThemeItem) => void;
   onSelectNav: (nav: NavSection) => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   themes,
+  recentItems,
   activeTheme,
   activeDevice,
   isPlaying,
@@ -56,10 +60,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onPrevTheme,
   onNextTheme,
   onOpenPicker,
+  onEditTheme,
   onSelectNav,
 }) => {
   const isPortrait = activeDevice.orientation === 'portrait';
-  const recentThemes = themes.filter((t) => t.isRecent).slice(0, isPortrait ? 5 : 6);
+  const recentThemes = (recentItems ?? themes.filter((t) => t.isRecent).sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))).slice(0, isPortrait ? 5 : 6);
   const trendingThemes = themes.filter((t) => t.isTrending).slice(0, isPortrait ? 5 : 3);
 
   const previewAspectRatio = isPortrait
@@ -130,26 +135,35 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             }`}
           >
             <FlipHorizontal2 className="h-3.5 w-3.5" />
-            <span>左右翻转</span>
+            <span>翻转</span>
           </button>
 
-          <button
+          {isPortrait && <button
             type="button"
             onClick={onOpenPicker}
             className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[12px] font-bold text-[#1A172B] shadow-[0_8px_20px_rgba(0,0,0,0.2)] transition-transform duration-150 hover:scale-[1.02] hover:bg-[#F4F2FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white whitespace-nowrap shrink-0"
           >
             <ImageIcon className="h-3.5 w-3.5 text-[#5E45F8]" />
-            <span>更换内容</span>
-          </button>
+            <span>更换</span>
+          </button>}
+          {isPortrait && (
+            <button type="button" onClick={() => onEditTheme(activeTheme)}
+              className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white whitespace-nowrap">
+              <Pencil className="h-3.5 w-3.5" />编辑
+            </button>
+          )}
         </div>
       </div>
 
       {/* Live Screen Preview Frame: Doubled width in portrait (~236px wide) */}
       <div className="relative z-10 mt-5 flex justify-center">
         <div
-          style={{ aspectRatio: previewAspectRatio }}
-          className={`group relative overflow-hidden rounded-[20px] border border-white/20 bg-black/35 shadow-[0_22px_48px_rgba(6,2,20,0.6)] transition-all duration-300 ${
-            isPortrait ? 'w-[216px] sm:w-[236px] max-w-full' : 'w-full'
+          style={{
+            aspectRatio: previewAspectRatio,
+            width: isPortrait ? undefined : `${Math.min(1, (activeDevice.nativeWidth / activeDevice.nativeHeight) / (1920 / 462)) * 100}%`,
+          }}
+          className={`group relative overflow-hidden rounded-[20px] ring-1 ring-inset ring-white/20 bg-black/35 shadow-[0_22px_48px_rgba(6,2,20,0.6)] transition-all duration-300 ${
+            isPortrait ? 'w-[216px] sm:w-[236px] max-w-full' : ''
           }`}
         >
           <ThemeArtwork
@@ -182,7 +196,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={onPrevTheme}
@@ -217,6 +231,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           >
             <SkipForward className="h-3.5 w-3.5" />
           </button>
+          {!isPortrait && <>
+            <button type="button" onClick={onOpenPicker}
+              className="flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[12px] font-semibold text-[#1A172B] transition-colors hover:bg-[#F4F2FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+              <ImageIcon className="h-3.5 w-3.5 text-[#5E45F8]" />更换
+            </button>
+            <button type="button" onClick={() => onEditTheme(activeTheme)}
+              className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+              <Pencil className="h-3.5 w-3.5" />编辑
+            </button>
+          </>}
         </div>
       </div>
     </section>

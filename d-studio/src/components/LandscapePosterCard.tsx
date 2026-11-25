@@ -38,7 +38,7 @@ export const LandscapePosterCard: React.FC<LandscapePosterCardProps> = ({
   return (
     <div
       style={{ aspectRatio }}
-      className={`group relative w-full overflow-hidden rounded-[18px] bg-[#160F30] shadow-[0_8px_24px_rgba(30,20,80,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(94,69,248,0.16)] ${
+      className={`group relative w-full overflow-hidden rounded-[18px] bg-transparent shadow-[0_8px_24px_rgba(30,20,80,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(94,69,248,0.16)] ${
         isCurrent ? 'ring-[2.5px] ring-[#5E45F8] ring-offset-2 ring-offset-[#F7F7FC]' : ''
       }`}
     >

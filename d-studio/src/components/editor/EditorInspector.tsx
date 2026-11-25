@@ -2008,9 +2008,14 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                     />
 
                     {/* Crop scale & offset inside frame */}
-                    <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                    <details className="group/section space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold text-[#56526B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] [&::-webkit-details-marker]:hidden">
+                        框内缩放裁切
+                        <span className="text-[10.5px] text-[#5E45F8] group-open/section:hidden">+ 展开</span>
+                        <span className="hidden text-[10.5px] text-[#5E45F8] group-open/section:inline">− 收起</span>
+                      </summary>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#56526B]">框内缩放裁切</span>
+
                         <button
                           type="button"
                           onClick={() =>
@@ -2057,12 +2062,17 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           onMutateSelected((el) => ({ ...el, cropY: val } as EditorElement))
                         }
                       />
-                    </div>
+                    </details>
 
                     {/* Color filter controls */}
-                    <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                    <details className="group/section space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold text-[#56526B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] [&::-webkit-details-marker]:hidden">
+                        画面调色
+                        <span className="text-[10.5px] text-[#5E45F8] group-open/section:hidden">+ 展开</span>
+                        <span className="hidden text-[10.5px] text-[#5E45F8] group-open/section:inline">− 收起</span>
+                      </summary>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#56526B]">画面调色</span>
+
                         <button
                           type="button"
                           onClick={() =>
@@ -2108,12 +2118,17 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           onMutateSelected((el) => ({ ...el, saturate: val } as EditorElement))
                         }
                       />
-                    </div>
+                    </details>
 
                     {/* Image Edge Feathering Mask */}
-                    <div className="space-y-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                    <details className="group/section space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold text-[#56526B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] [&::-webkit-details-marker]:hidden">
+                        边缘羽化遮罩
+                        <span className="text-[10.5px] text-[#5E45F8] group-open/section:hidden">+ 展开</span>
+                        <span className="hidden text-[10.5px] text-[#5E45F8] group-open/section:inline">− 收起</span>
+                      </summary>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#56526B]">边缘羽化遮罩</span>
+
                         {imgEl.feather && imgEl.feather.strength > 0 && (
                           <button
                             type="button"
@@ -2195,7 +2210,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           }
                         />
                       )}
-                    </div>
+                    </details>
 
                     <ShadowControls
                       shadow={imgEl.shadow}
@@ -2276,9 +2291,14 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                       }
                     />
 
-                    <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                    <details className="group/section space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold text-[#56526B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] [&::-webkit-details-marker]:hidden">
+                        框内缩放裁切
+                        <span className="text-[10.5px] text-[#5E45F8] group-open/section:hidden">+ 展开</span>
+                        <span className="hidden text-[10.5px] text-[#5E45F8] group-open/section:inline">− 收起</span>
+                      </summary>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#56526B]">框内缩放裁切</span>
+
                         <button
                           type="button"
                           onClick={() =>
@@ -2325,11 +2345,16 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           onMutateSelected((el) => ({ ...el, cropY: val } as EditorElement))
                         }
                       />
-                    </div>
+                    </details>
 
-                    <div className="space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                    <details className="group/section space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold text-[#56526B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] [&::-webkit-details-marker]:hidden">
+                        画面调色
+                        <span className="text-[10.5px] text-[#5E45F8] group-open/section:hidden">+ 展开</span>
+                        <span className="hidden text-[10.5px] text-[#5E45F8] group-open/section:inline">− 收起</span>
+                      </summary>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#56526B]">画面调色</span>
+
                         <button
                           type="button"
                           onClick={() =>
@@ -2375,11 +2400,16 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           onMutateSelected((el) => ({ ...el, saturate: val } as EditorElement))
                         }
                       />
-                    </div>
+                    </details>
 
-                    <div className="space-y-2 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                    <details className="group/section space-y-1.5 rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold text-[#56526B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8] [&::-webkit-details-marker]:hidden">
+                        边缘羽化遮罩
+                        <span className="text-[10.5px] text-[#5E45F8] group-open/section:hidden">+ 展开</span>
+                        <span className="hidden text-[10.5px] text-[#5E45F8] group-open/section:inline">− 收起</span>
+                      </summary>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-[#56526B]">边缘羽化遮罩</span>
+
                         {vidEl.feather && vidEl.feather.strength > 0 && (
                           <button
                             type="button"
@@ -2461,7 +2491,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           }
                         />
                       )}
-                    </div>
+                    </details>
 
                     <ShadowControls
                       shadow={vidEl.shadow}
@@ -3413,9 +3443,10 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className={single.kind === 'image' || single.kind === 'video' ? 'grid grid-cols-3 gap-1.5' : 'grid grid-cols-2 gap-1.5'}>
                           <button
                             type="button"
+                            title="按素材原始像素尺寸显示"
                             onClick={async () => {
                               if (single.kind === 'image' || single.kind === 'video') {
                                 let nw = single.sourceMeta?.naturalWidth;
@@ -3496,11 +3527,12 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                             }}
                             className="w-full min-w-0 truncate rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2 py-1.5 text-[11px] font-semibold text-[#1A172B] transition-colors hover:border-[#5E45F8] hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
                           >
-                            {single.kind === 'image' || single.kind === 'video' ? '按原尺寸显示' : '按默认尺寸'}
+                            {single.kind === 'image' || single.kind === 'video' ? '原始尺寸' : '按默认尺寸'}
                           </button>
 
                           <button
                             type="button"
+                            title="等比缩放并居中，让完整内容放入画布"
                             onClick={async () => {
                               if (single.kind === 'image' || single.kind === 'video') {
                                 let nw = single.sourceMeta?.naturalWidth;
@@ -3576,8 +3608,53 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                             }}
                             className="w-full min-w-0 truncate rounded-xl border border-[#D9D2FF] bg-[#EFEBFD] px-2 py-1.5 text-[11px] font-semibold text-[#5E45F8] transition-colors hover:bg-[#5E45F8] hover:text-white"
                           >
-                            100% 比例显示
+                            完整显示
                           </button>
+                          {(single.kind === 'image' || single.kind === 'video') && (
+                            <button
+                              type="button"
+                              title="等比缩放至覆盖整个画布并居中，超出部分可拖动查看"
+                              onClick={async () => {
+                                try {
+                                  let nw = single.sourceMeta?.naturalWidth;
+                                  let nh = single.sourceMeta?.naturalHeight;
+                                  if ((!nw || !nh) && single.src) {
+                                    const dims = single.kind === 'image'
+                                      ? await readImageDimensions(single.src)
+                                      : await readVideoDimensions(single.src);
+                                    nw = dims.w;
+                                    nh = dims.h;
+                                  }
+                                  const sourceW = nw || Math.max(1, boxW * layoutSize[0] / 100);
+                                  const sourceH = nh || Math.max(1, boxH * layoutSize[1] / 100);
+                                  const scale = Math.max(layoutSize[0] / sourceW, layoutSize[1] / sourceH);
+                                  const width = sourceW * scale;
+                                  const height = sourceH * scale;
+                                  onMutateSelected((el) => {
+                                    if (el.id !== single.id || (el.kind !== 'image' && el.kind !== 'video')) return el;
+                                    return {
+                                      ...el, w: width / layoutSize[0] * 100,
+                                      h: height / layoutSize[1] * 100,
+                                      ar: sourceW / sourceH,
+                                      size: height / minDim * 100,
+                                      fit: 'contain', a: 'mc', x: 0, y: 0,
+                                      cropScale: 1, cropX: 0, cropY: 0,
+                                      sourceMeta: {
+                                        ...(el.sourceMeta ?? { origin: 'local' }),
+                                        naturalWidth: sourceW, naturalHeight: sourceH,
+                                      },
+                                    } as EditorElement;
+                                  });
+                                } catch {
+                                  onNotify?.('无法读取素材尺寸，请检查文件后重试。');
+                                }
+                              }}
+                              className="w-full min-w-0 truncate rounded-xl border border-[#D9D2FF] bg-[#EFEBFD] px-2 py-1.5 text-[11px] font-semibold text-[#5E45F8] transition-colors hover:border-[#5E45F8] hover:bg-[#E5DDFD]"
+                            >
+                              满屏显示
+                            </button>
+                          )}
+
                         </div>
                       </div>
                     )}
