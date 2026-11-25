@@ -1,0 +1,85 @@
+<UserControl x:Class="DeskDisplay.App.Views.ManagedDevicePanel"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:DeskDisplay.App.Views" Background="{DynamicResource Brush.Background}" Foreground="{DynamicResource Brush.Text}"
+ FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="13">
+ <UserControl.Resources>
+  <ResourceDictionary>
+   <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Colors.xaml"/>
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Controls.xaml"/>
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Cards.xaml"/>
+   </ResourceDictionary.MergedDictionaries>
+   <BooleanToVisibilityConverter x:Key="Visible"/>
+  </ResourceDictionary>
+ </UserControl.Resources>
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel Margin="0,12,0,20">
+
+   <StackPanel DataContext="{Binding Managed}">
+    <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+    <Border Style="{StaticResource SoftCard.Flat}" Margin="0,0,0,16">
+     <StackPanel>
+      <WrapPanel>
+       <TextBlock Text="应用主题" VerticalAlignment="Center" Margin="0,0,12,10"/>
+       <ComboBox Style="{DynamicResource SoftSelector}" Width="230" ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" DisplayMemberPath="Name" Margin="0,0,12,10" AutomationProperties.AutomationId="DeviceThemePicker"/>
+       <Button Content="应用到所选设备" Command="{Binding ApplySelectedCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,10"/>
+       <Button Content="停止所选" Command="{Binding StopSelectedCommand}" Style="{StaticResource SoftButton}" Margin="0,0,8,10"/>
+       <Button Content="刷新" Command="{Binding RefreshCommand}" Style="{StaticResource SoftButton}" Margin="0,0,8,10"/>
+       <Button Content="保存设备设置" Command="{Binding SaveCommand}" Style="{StaticResource SoftButton}" Margin="0,0,0,10"/>
+      </WrapPanel>
+      <TextBlock Text="选择已保存的创作主题或当前主题预览；每台设备独立适配。" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+     </StackPanel>
+    </Border>
+    <Border Padding="24" Background="White" CornerRadius="12" Margin="0,0,0,16">
+     <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasDevices}" Value="False"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+     <TextBlock Text="暂无可用设备，请连接 D92 或 Windows 扩展显示器后刷新。" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"/>
+    </Border>
+    <ItemsControl ItemsSource="{Binding Cards}" AutomationProperties.AutomationId="ManagedDeviceCards">
+     <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+     <ItemsControl.ItemTemplate><DataTemplate>
+      <Border Style="{StaticResource SoftCard.Flat}" Margin="0,0,12,16" Padding="18">
+       <StackPanel>
+        <DockPanel Margin="0,0,0,8">
+         <TextBlock DockPanel.Dock="Right" Text="{Binding ConnectionStatus}" VerticalAlignment="Center">
+          <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="#30AE8B"/><Style.Triggers><DataTrigger Binding="{Binding Connected}" Value="False"><Setter Property="Foreground" Value="#8C9AB1"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+         </TextBlock>
+         <CheckBox IsChecked="{Binding Selected}" VerticalAlignment="Center"><TextBlock Text="{Binding Model}" FontWeight="SemiBold" FontSize="17"/></CheckBox>
+        </DockPanel>
+        <TextBox Text="{Binding Alias, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" IsEnabled="{Binding CanEdit}" ToolTip="设备名称" Margin="0,0,0,8"/>
+        <TextBlock Foreground="{DynamicResource Brush.TextSecondary}" Margin="0,0,0,5"><Run Text="{Binding Connection, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Orientation, Mode=OneWay}"/></TextBlock>
+        <TextBlock Text="{Binding DeviceId}" FontSize="10" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" MaxHeight="34" ToolTip="{Binding DeviceId}"/>
+        <TextBlock Text="{Binding IdentityStatus}" Foreground="{DynamicResource Brush.TextSecondary}" FontSize="11" Margin="0,4,0,12"/>
+        <TextBlock Text="{Binding CapabilityNotice}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}" FontSize="11"/>
+        <WrapPanel IsEnabled="{Binding CanEdit}" Margin="0,0,0,12">
+         <TextBlock Text="像素" VerticalAlignment="Center" Margin="0,0,8,0"/>
+         <TextBox Width="64" Text="{Binding Width, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditGeometry}" ToolTip="输出表面宽度；系统副屏读取实际分辨率"/>
+         <TextBlock Text="×" VerticalAlignment="Center" Margin="6,0"/>
+         <TextBox Width="64" Text="{Binding Height, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditGeometry}" ToolTip="输出表面高度；系统副屏读取实际分辨率"/>
+         <TextBlock Text="旋转" VerticalAlignment="Center" Margin="12,0,8,0"/>
+         <ComboBox Style="{DynamicResource SoftSelector}" Width="64" ItemsSource="{Binding Rotations}" SelectedItem="{Binding Rotation}" IsEnabled="{Binding CanEditGeometry}" ToolTip="传输旋转，系统副屏使用0°"/>
+        </WrapPanel>
+        <TextBlock Text="物理屏关联组（同一屏的不同连接填写相同名称）" FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}"/><TextBox Text="{Binding PhysicalGroup, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" MaxLength="80" Margin="0,5,0,10"/><CheckBox IsChecked="{Binding Confirmed}" IsEnabled="{Binding CanConfirm}" Margin="0,0,0,12">
+         <TextBlock Text="已核对目标和参数，其他软件已释放设备" TextWrapping="Wrap" FontSize="11"/>
+        </CheckBox>
+        <TextBlock Text="{Binding AppliedTheme}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding OutputStatus}" Foreground="{DynamicResource Brush.Primary}" Margin="0,4,0,0"/>
+        <TextBlock Text="{Binding LayoutStatus}" Foreground="{DynamicResource Brush.TextSecondary}" FontSize="11" Margin="0,4,0,0"/>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}" Margin="0,5,0,10" MinHeight="18"/>
+        <WrapPanel>
+         <Button Content="应用主题" Command="{Binding ApplyCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+         <Button Content="停止此设备" Command="{Binding StopCommand}" Style="{StaticResource SoftButton}"/>
+        </WrapPanel>
+       </StackPanel>
+      </Border>
+     </DataTemplate></ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <TextBlock Text="同一物理屏的 USB 和系统连接填写相同关联组并保存，可防止新会话重复输出。旧单设备输出入口仍请只选一种连接。" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+   </StackPanel>
+   <Expander Header="原有副屏设置与输出" Margin="0,8,0,0">
+    <Expander.Style><Style TargetType="Expander"><Setter Property="IsExpanded" Value="False"/><Style.Triggers><DataTrigger Binding="{Binding Managed}" Value="{x:Null}"><Setter Property="IsExpanded" Value="True"/></DataTrigger></Style.Triggers></Style></Expander.Style>
+    <local:DevicesView MinHeight="500"/>
+   </Expander>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

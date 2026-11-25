@@ -1,0 +1,6 @@
+{
+  "name": "D92 Studio - MiraBox 多设备控制中心",
+  "description": "专为 MiraBox D92 与 D69 超宽副屏设计的多设备管理工作台，支持超宽屏智能适配、在线资源库、主题与时钟创作中心、独立轮播列表与输出控制。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

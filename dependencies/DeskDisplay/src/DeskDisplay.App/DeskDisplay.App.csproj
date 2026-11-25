@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+    <ProjectReference Include="../DeskDisplay.Core/DeskDisplay.Core.csproj" />
+    <ProjectReference Include="../DeskDisplay.Display/DeskDisplay.Display.csproj" />
+    <ProjectReference Include="../DeskDisplay.Infrastructure/DeskDisplay.Infrastructure.csproj" />
+    <ProjectReference Include="..\DeskDisplay.Sensors\DeskDisplay.Sensors.csproj" />
+    <ProjectReference Include="..\DeskDisplay.Library\DeskDisplay.Library.csproj" />
+  </ItemGroup>
+</Project>

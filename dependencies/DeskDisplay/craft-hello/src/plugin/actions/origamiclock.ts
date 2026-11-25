@@ -1,0 +1,9 @@
+import {usePluginStore,useWatchEvent} from '@/hooks/plugin';
+import {OrigamiState,drawOrigamiClock,origamiDigits} from '@/origami-clock';
+export default function(name:string){
+ const plugin=usePluginStore(),ActionID=window.argv[3].plugin.uuid+'.'+name,states=new Map<string,any>();
+ function start(context:string){stop(context);states.set(context,{canvas:document.createElement('canvas'),clock:new OrigamiState(),last:'',busy:false,token:undefined});tick(context,true);plugin.Interval(ActionID+context,33,()=>tick(context));}
+ function stop(context:string){plugin.Unterval(ActionID+context);states.delete(context);}
+ function tick(context:string,force=false){const st=states.get(context),a=plugin.getAction(context);if(!st||!a||st.busy)return;const s=a.settings as any,now=performance.now(),date=new Date();st.clock.update(origamiDigits(date),now,s);if(st.token===undefined)st.token=s.demoToken||0;if(st.token!==(s.demoToken||0)){st.token=s.demoToken||0;st.clock.demo(now,s);}const p=st.clock.progress(now,s),blink=s.blink===false?1:date.getMilliseconds()<500?1:0,key=JSON.stringify(s)+st.clock.revision+':'+p+':'+blink+':'+date.toDateString();if(!force&&st.last===key)return;const canvas=drawOrigamiClock(st.canvas,st.clock.from,st.clock.to,p,s,date);if(s.transport==='binary'){st.busy=true;canvas.toBlob(async blob=>{try{if(blob&&states.get(context)===st){a.setImageBlob(await blob.arrayBuffer(),'image/png');st.last=key;}}finally{st.busy=false;}},'image/png');}else try{a.setImage(canvas.toDataURL('image/jpeg',.94));st.last=key;}catch(e){console.error(JSON.stringify({event:'origami_clock_send_error',error:String(e)}));}}
+ useWatchEvent('action',{ActionID,willAppear:({context})=>start(context),willDisappear:({context})=>stop(context),didReceiveSettings:({context})=>tick(context,true)});
+}

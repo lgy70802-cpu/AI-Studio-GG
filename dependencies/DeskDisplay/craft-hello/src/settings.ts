@@ -1,0 +1,5 @@
+export const defaults = { timeFont: 'consolas', text: '你好，D92', bgColor: '#101820', textColor: '#72e4cc', showSeconds: true, showDate: true, showWeekday: true, hour12: false, transparent: false };
+export const themes = { mint: { name:'薄荷绿', bgColor:'#101820',textColor:'#72e4cc' }, amber:{ name:'暖橙色',bgColor:'#201710',textColor:'#ffb568' }, white:{name:'极简白',bgColor:'#16181c',textColor:'#f3f5f7'} };
+export function normalize(s:any={}) { const result={...defaults,...s}; for(const key of ['showSeconds','showDate','showWeekday','hour12','transparent']) result[key]=typeof s[key]==='boolean'?s[key]:defaults[key]; return result; }
+export function timeParts(s:any, now:Date) { s=normalize(s); const h=now.getHours();return { digits:[s.hour12?(h%12||12):h,now.getMinutes(),...(s.showSeconds?[now.getSeconds()]:[])].map(n=>String(n).padStart(2,'0')), period:s.hour12?(h<12?'AM':'PM'):'' }; }
+export function frameKey(s:any,now:Date) { const p=timeParts(s,now);return now.toDateString()+p.digits.join(':')+p.period; }

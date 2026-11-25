@@ -1,0 +1,209 @@
+<UserControl x:Class="DeskDisplay.App.Views.WorkspacePanel"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:views="clr-namespace:DeskDisplay.App.Views"
+ xmlns:sceneViews="clr-namespace:DeskDisplay.Display.Views;assembly=DeskDisplay.Display">
+        <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/DeskDisplay.App;component/Themes/Colors.xaml"/><ResourceDictionary Source="/DeskDisplay.App;component/Themes/Typography.xaml"/><ResourceDictionary Source="/DeskDisplay.App;component/Themes/Controls.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+        <Grid Margin="32,28,32,24">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <TextBlock Text="{Binding SelectedNavigation}" FontSize="16" Foreground="#52647A" />
+            <Grid Grid.Row="1" Margin="0,24,0,20">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers><DataTrigger Binding="{Binding SelectedNavigation}" Value="首页"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="{Binding Title}" FontSize="30" FontWeight="SemiBold" Foreground="#172233" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Description}" Foreground="#65748A" FontSize="15" Margin="0,12,0,0" />
+                    <StackPanel Margin="0,14,0,0">
+                        <ComboBox ItemsSource="{Binding Workspace.SceneChoices}" SelectedItem="{Binding Workspace.SelectedScene}" IsEnabled="{Binding Workspace.CanEdit}" Padding="10" AutomationProperties.Name="选择场景" />
+                        <StackPanel Margin="0,12,0,0" IsEnabled="{Binding Workspace.CanEdit}">
+                            <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding Workspace.SelectedScene}" Value="图片"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                            <ComboBox ItemsSource="{Binding Images.Modes}" DisplayMemberPath="Name" SelectedValuePath="Value" SelectedValue="{Binding Images.Mode}" Padding="8" AutomationProperties.Name="图片显示模式" />
+                            <TextBlock Text="{Binding Images.ImagePath}" TextTrimming="CharacterEllipsis" Margin="0,6" />
+                        </StackPanel>
+                        <StackPanel Margin="0,12,0,0" IsEnabled="{Binding Workspace.CanEdit}">
+                            <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding Workspace.SelectedScene}" Value="组合"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                            <WrapPanel>
+                                <ComboBox ItemsSource="{Binding Workspace.DashboardLayouts}" SelectedItem="{Binding Workspace.DashboardLayoutName}" Width="150" Padding="8" Margin="0,0,12,8" AutomationProperties.Name="组合布局" />
+                                <ComboBox ItemsSource="{Binding Images.Modes}" DisplayMemberPath="Name" SelectedValuePath="Value" SelectedValue="{Binding Images.Mode}" Width="110" Padding="8" Margin="0,0,12,8" AutomationProperties.Name="组合背景显示模式" />
+                                <CheckBox Content="显示 CPU / GPU / RAM" IsChecked="{Binding Workspace.DashboardShowPerformance}" VerticalAlignment="Center" Margin="0,0,0,8" />
+                            </WrapPanel>
+                            <TextBlock Text="{Binding Images.ImagePath}" TextTrimming="CharacterEllipsis" Margin="0,0,0,6" />
+                        </StackPanel>
+                        <WrapPanel Margin="0,12,0,0" IsEnabled="{Binding Workspace.CanEdit}">
+                            <WrapPanel.Style><Style TargetType="WrapPanel"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding Workspace.SelectedScene}" Value="视频"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></WrapPanel.Style>
+                            <ComboBox ItemsSource="{Binding Videos.FpsOptions}" SelectedItem="{Binding Videos.Fps}" Width="80" Padding="8" AutomationProperties.Name="Windows预览视频FPS" ToolTip="此设置用于软件预览和 Windows 副屏；D92 USB 视频目标帧率在设备设置中调整，最高30 FPS" />
+                            <TextBlock Text="FPS" VerticalAlignment="Center" Margin="8,0" />
+                            <Button Style="{DynamicResource SoftButton}" Content="更新预览 FPS" Command="{Binding Videos.UpdateFpsCommand}" Padding="12,8" />
+                        </WrapPanel>
+                        <WrapPanel Margin="0,12,0,0">
+                            <Button Style="{DynamicResource SoftButton}" Content="选择文件" Command="{Binding Workspace.SelectFileCommand}" Padding="12,8" Margin="0,0,8,8" />
+                            <Button Style="{DynamicResource SoftButton}" Content="应用到副屏" Command="{Binding Workspace.ApplyCommand}" Padding="12,8" Margin="0,0,8,8" />
+                            <Button Style="{DynamicResource SoftButton}" Content="显示到 D92" Command="{Binding Workspace.ApplyUsbCommand}" Padding="12,8" Margin="0,0,8,8" Background="#FFD21C" ToolTip="使用 USB屏 页面已设置的设备、画布和旋转；支持时钟、图片和性能" />
+                            <Button Style="{DynamicResource SoftButton}" Content="停止显示" Command="{Binding Workspace.StopCommand}" Padding="12,8" Margin="0,0,0,8" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Workspace.PreviewStatus}" Foreground="#52647A" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Workspace.OutputStatus}" Foreground="#52647A" TextWrapping="Wrap" Margin="0,4" />
+                        <TextBlock Text="{Binding Workspace.Status}" Foreground="#345C85" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Videos.Status}" Foreground="#65748A" TextWrapping="Wrap">
+                            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding Workspace.SelectedScene}" Value="视频"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </StackPanel>
+                <sceneViews:PreviewHost Grid.Row="1" AspectRatio="{Binding Scene.AspectRatio}"
+                                        Margin="0,20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        AutomationProperties.AutomationId="ScenePreviewHost">
+                    <sceneViews:SceneView DataContext="{Binding Scene}" Scene="{Binding}"
+                                          AutomationProperties.AutomationId="ClockPreview" />
+                </sceneViews:PreviewHost>
+                <TextBlock Grid.Row="2" Text="{Binding PreviewDescription}" Foreground="#52647A" TextWrapping="Wrap" />
+            </Grid>
+            <Grid Grid.Row="1" Margin="0,18,0,12">
+                <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding SelectedNavigation}" Value="插件"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></Grid.Style>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <DockPanel Margin="0,0,0,18">
+                    <StackPanel>
+                        <TextBlock Text="插件管理" FontSize="28" FontWeight="SemiBold" Foreground="#172233" />
+                        <TextBlock Text="启用组件后，可在软件内预览，并通过同一场景直接输出到 D92。" Foreground="#65748A" Margin="0,8,0,0" />
+                    </StackPanel>
+                    <Border DockPanel.Dock="Right" Background="#FFF5C4" CornerRadius="16" Padding="14,7" VerticalAlignment="Center">
+                        <TextBlock Text="2 个内置插件" Foreground="#765900" FontWeight="SemiBold" />
+                    </Border>
+                </DockPanel>
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="430" /><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="0,0,8,0">
+                            <Border Background="White" CornerRadius="18" BorderBrush="#ECECF0" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Button Style="{DynamicResource SoftButton}" DockPanel.Dock="Right" Content="查看" Command="{Binding Plugins.SelectCameraCommand}" Padding="12,7" />
+                                        <Border Width="48" Height="48" CornerRadius="14" Background="#31513D" DockPanel.Dock="Left" Margin="0,0,14,0"><TextBlock Text="📷" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <StackPanel><TextBlock Text="复古相机翻页时钟" FontSize="20" FontWeight="Bold" /><TextBlock Text="1.0 · DeskDisplay 原生版" Foreground="#8B8D96" Margin="0,4,0,0" /></StackPanel>
+                                    </DockPanel>
+                                    <TextBlock Text="摄影质感相机底图，月、日、时、分、秒五联机械翻牌。" TextWrapping="Wrap" Foreground="#52647A" Margin="0,15,0,14" />
+                                    <CheckBox Content="启用相机时钟" IsChecked="{Binding Plugins.CameraEnabled}" FontWeight="SemiBold" Margin="0,0,0,12" />
+                                    <WrapPanel>
+                                        <CheckBox Content="翻页动画" IsChecked="{Binding Plugins.CameraAnimate}" Margin="0,0,18,10" />
+                                        <CheckBox Content="12 小时制" IsChecked="{Binding Plugins.CameraHour12}" Margin="0,0,0,10" />
+                                    </WrapPanel>
+                                    <Grid Margin="0,2,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="120" /><ColumnDefinition Width="16" /><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="动画速度" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding Plugins.CameraDurations}" SelectedItem="{Binding Plugins.CameraDuration}" />
+                                        <TextBlock Grid.Column="3" Text="纵向位置" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <Slider Grid.Column="4" Minimum="80" Maximum="230" Value="{Binding Plugins.CameraCropY}" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <WrapPanel>
+                                        <Button Style="{DynamicResource SoftButton}" Content="保存设置" Command="{Binding Plugins.SaveCameraCommand}" Padding="13,8" Margin="0,0,8,8" Background="#FFD21C" />
+                                        <Button Style="{DynamicResource SoftButton}" Content="演示翻页" Command="{Binding Plugins.DemoCameraCommand}" Padding="13,8" Margin="0,0,8,8" />
+                                        <Button Style="{DynamicResource SoftButton}" Content="预览插件" Command="{Binding Plugins.PreviewCameraCommand}" Padding="13,8" Margin="0,0,8,8" Background="#19191F" Foreground="White" />
+                                        <Button Style="{DynamicResource SoftButton}" Content="显示到 D92" Command="{Binding Plugins.ApplyCameraUsbCommand}" Padding="13,8" Margin="0,0,0,8" />
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding Plugins.CameraMessage}" TextWrapping="Wrap" Foreground="#345C85" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <Border Background="White" CornerRadius="18" BorderBrush="#ECECF0" BorderThickness="1" Padding="22">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Button Style="{DynamicResource SoftButton}" DockPanel.Dock="Right" Content="查看" Command="{Binding Plugins.SelectStockCommand}" Padding="12,7" />
+                                        <Border Width="48" Height="48" CornerRadius="14" Background="#151B27" DockPanel.Dock="Left" Margin="0,0,14,0"><TextBlock Text="股" Foreground="#FFD21C" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <StackPanel><TextBlock Text="{Binding Plugins.Name}" FontSize="20" FontWeight="Bold" /><TextBlock Text="{Binding Plugins.Version}" Foreground="#8B8D96" Margin="0,4,0,0" /></StackPanel>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding Plugins.Description}" TextWrapping="Wrap" Foreground="#52647A" Margin="0,15,0,14" />
+                                    <CheckBox Content="启用股票插件" IsChecked="{Binding Plugins.Enabled}" FontWeight="SemiBold" Margin="0,0,0,12" />
+                                    <TextBox Text="{Binding Plugins.Symbols, UpdateSourceTrigger=PropertyChanged}" ToolTip="支持 1–20 个 A 股代码，以逗号或空格分隔" />
+                                    <TextBlock Text="示例：600519, 300750, 600036, 688981" Foreground="#999BA3" FontSize="11" Margin="0,6,0,12" />
+                                    <WrapPanel>
+                                        <Button Style="{DynamicResource SoftButton}" Content="保存" Command="{Binding Plugins.SaveCommand}" Padding="13,8" Margin="0,0,8,8" Background="#FFD21C" />
+                                        <Button Style="{DynamicResource SoftButton}" Content="刷新" Command="{Binding Plugins.RefreshCommand}" Padding="13,8" Margin="0,0,8,8" />
+                                        <Button Style="{DynamicResource SoftButton}" Content="预览" Command="{Binding Plugins.PreviewCommand}" Padding="13,8" Margin="0,0,8,8" Background="#19191F" Foreground="White" />
+                                        <Button Style="{DynamicResource SoftButton}" Content="显示到 D92" Command="{Binding Plugins.ApplyUsbCommand}" Padding="13,8" Margin="0,0,0,8" />
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding Plugins.Message}" TextWrapping="Wrap" Foreground="#345C85" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Border Grid.Column="2" Background="#0C1422" CornerRadius="18" Padding="18">
+                        <Grid>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <DockPanel Margin="4,0,4,12"><TextBlock Text="{Binding Plugins.ActivePluginTitle}" Foreground="White" FontSize="17" FontWeight="SemiBold" /><TextBlock DockPanel.Dock="Right" Text="1920 × 462 · D92" Foreground="#91A0B5" VerticalAlignment="Center" /></DockPanel>
+                            <sceneViews:PreviewHost Grid.Row="1" AspectRatio="4.155844155844156" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                <sceneViews:SceneView Scene="{Binding Plugins.ActiveScene}" />
+                            </sceneViews:PreviewHost>
+                            <TextBlock Grid.Row="2" Text="软件预览支持完整翻页动画；D92 USB 按当前整屏传输帧率显示。" Foreground="#91A0B5" Margin="4,12,4,0" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+            <Border Grid.Row="1" Background="White" CornerRadius="12" Padding="24" VerticalAlignment="Stretch">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers><DataTrigger Binding="{Binding SelectedNavigation}" Value="设置"><Setter Property="Visibility" Value="Visible" /></DataTrigger><DataTrigger Binding="{Binding SelectedNavigation}" Value="诊断"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <TextBlock Text="设置" Style="{DynamicResource Text.PageTitle}" Margin="0,0,0,16"/>
+                    <TabControl Grid.Row="1" Style="{DynamicResource SectionTabs}" AutomationProperties.Name="设置分组">
+                        <TabItem Header="常规"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
+                            <TextBlock Text="启动与常驻" Style="{DynamicResource Text.SectionTitle}" Margin="0,0,0,16"/>
+                            <CheckBox Content="关闭窗口后留在托盘运行" IsChecked="{Binding CloseToTray}" Margin="0,0,0,16"/>
+                            <CheckBox Content="登录 Windows 后启动" IsChecked="{Binding LaunchAtLogin}" Margin="0,0,0,16"/>
+                            <CheckBox Content="启动时恢复上次 D92 内容" IsChecked="{Binding RestoreD92OnStartup}" Margin="0,0,0,12"/>
+                            <TextBlock Text="仅恢复已确认且当前连接的同一设备；轮播保留上次项目和暂停状态，重新计时。" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}" Margin="0,0,0,16"/>
+                            <CheckBox Content="启动后自动显示到已保存的 Windows 副屏" IsChecked="{Binding Workspace.AutoDisplayOnStartup}" IsEnabled="{Binding Workspace.CanEdit}" Margin="0,0,0,12"/>
+                            <TextBlock Text="目标屏未连接或文件丢失时，不会自动输出。唤醒后请重新确认并应用。" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                            <TextBlock Text="{Binding RuntimeFeedback}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Primary}" Margin="0,16,0,0"/>
+                        </StackPanel></ScrollViewer></TabItem>
+                        <TabItem Header="资源与备份"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
+                            <TextBlock Text="数据管理" Style="{DynamicResource Text.SectionTitle}" Margin="0,0,0,16"/>
+                            <WrapPanel><Button Content="资源检查与修复" Command="{Binding OpenResourceMaintenanceCommand}" Style="{DynamicResource SoftButton}" Margin="0,0,8,8"/><Button Content="备份已保存数据" Command="{Binding ClientTools.BackupCommand}" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,8"/><Button Content="导入备份" Command="{Binding ClientTools.RestoreCommand}" Style="{DynamicResource SoftButton}" Margin="0,0,8,8"/></WrapPanel>
+                            <TextBlock Text="包含已保存主题、引用素材、分类收藏与轮播，不含账号凭据。导入在下次启动合并，不覆盖已有设置或同 ID 主题。单包最多 4 GiB。" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}" Margin="0,8,0,0"/>
+                            <TextBlock Text="{Binding ClientTools.Status}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Primary}" Margin="0,16,0,0"/>
+                        </StackPanel></ScrollViewer></TabItem>
+                        <TabItem Header="版本与更新"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
+                            <TextBlock Text="{Binding ClientTools.Version, StringFormat=当前版本：{0}}" Style="{DynamicResource Text.SectionTitle}" Margin="0,0,0,16"/>
+                            <TextBlock Text="{Binding ClientTools.ReleaseNotes}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                            <WrapPanel><Button Content="选择本地更新包" Command="{Binding ClientTools.UpdateCommand}" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,8"/><Button Content="打开当前程序目录" Command="{Binding ClientTools.OpenInstallCommand}" Style="{DynamicResource SoftButton}" Margin="0,0,8,8"/></WrapPanel>
+                            <TextBlock Text="校验通过后打开安装目录。请保存并关闭软件，再运行 Install.ps1。" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}" Margin="0,8,0,0"/>
+                            <TextBlock Text="{Binding ClientTools.Status}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Primary}" Margin="0,16,0,0"/>
+                        </StackPanel></ScrollViewer></TabItem>
+                        <TabItem Header="运行诊断"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,12,0,0">
+                            <TextBlock Text="性能与日志" Style="{DynamicResource Text.SectionTitle}" Margin="0,0,0,16"/>
+                            <TextBlock Text="{Binding Output.LastTransitionMilliseconds, StringFormat=最近切换耗时：{0:F0} ms}" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding MaxUiDelayMilliseconds, StringFormat=本次运行 UI 最大调度延迟：{0:F0} ms}" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding RenderPerformanceSummary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding Library.LastRefreshMilliseconds, StringFormat=资源库最近筛选/布局提交：{0:F1} ms}" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding Library.MaxRefreshMilliseconds, StringFormat=资源库最大筛选/布局提交：{0:F1} ms}" Margin="0,0,0,16"/>
+                            <Button Content="打开日志文件夹" Command="{Binding Workspace.OpenLogsCommand}" Style="{DynamicResource SoftButton}" HorizontalAlignment="Left" Margin="0,0,0,16"/>
+                            <TextBlock Text="{Binding Workspace.Diagnostics}" TextWrapping="Wrap" LineHeight="24"/>
+                            <TextBlock Text="{Binding Workspace.Status}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Primary}" Margin="0,16,0,0"/>
+                        </StackPanel></ScrollViewer></TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+            <views:ManagedDevicePanel Grid.Row="1" DataContext="{Binding Devices}">
+                <views:ManagedDevicePanel.Style>
+                    <Style TargetType="views:ManagedDevicePanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding DataContext.SelectedNavigation, RelativeSource={RelativeSource AncestorType=Window}}" Value="设备">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </views:ManagedDevicePanel.Style>
+            </views:ManagedDevicePanel>
+            <views:UsbOutputView Grid.Row="1" DataContext="{Binding Usb}">
+                <views:UsbOutputView.Style><Style TargetType="views:UsbOutputView">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers><DataTrigger Binding="{Binding DataContext.SelectedNavigation, RelativeSource={RelativeSource AncestorType=Window}}" Value="USB屏"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+                </Style></views:UsbOutputView.Style>
+            </views:UsbOutputView>
+        </Grid>
+</UserControl>

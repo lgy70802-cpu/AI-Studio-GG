@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Color x:Key="BrandStart">#2468E8</Color>
+    <Color x:Key="BrandEnd">#0B97C2</Color>
+    <SolidColorBrush x:Key="AccentBrush" Color="#0F7FCF"/>
+    <SolidColorBrush x:Key="InkBrush" Color="#1F2F45"/>
+    <SolidColorBrush x:Key="MutedBrush" Color="#6B7B90"/>
+    <SolidColorBrush x:Key="SurfaceBrush" Color="White"/>
+    <SolidColorBrush x:Key="LineBrush" Color="#E1ECF2"/>
+    <SolidColorBrush x:Key="TintBrush" Color="#E6F6FB"/>
+    <SolidColorBrush x:Key="PlaylistSelectionBorderBrush" Color="#B8E4F0"/>
+    <SolidColorBrush x:Key="CyanBorderBrush" Color="#3CC3D8"/>
+    <LinearGradientBrush x:Key="BrandBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="{StaticResource BrandStart}" Offset="0"/>
+        <GradientStop Color="{StaticResource BrandEnd}" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="WorkspaceBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#D6EEF9" Offset="0"/>
+        <GradientStop Color="#E3F6F6" Offset=".48"/>
+        <GradientStop Color="#F1FAFC" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="MarkerBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="Transparent" Offset="0"/>
+        <GradientStop Color="Transparent" Offset=".64"/>
+        <GradientStop Color="#613CC8E1" Offset=".64"/>
+        <GradientStop Color="#613CC8E1" Offset="1"/>
+    </LinearGradientBrush>
+    <CornerRadius x:Key="PanelRadius">24</CornerRadius>
+    <CornerRadius x:Key="CardRadius">18</CornerRadius>
+    <Thickness x:Key="ModalStroke">2.5</Thickness>
+    <DropShadowEffect x:Key="PanelShadow" Color="#125C8C" BlurRadius="18" ShadowDepth="6" Direction="270" Opacity=".10"/>
+    <DropShadowEffect x:Key="ModalShadow" Color="#0E466E" BlurRadius="26" ShadowDepth="8" Opacity=".28"/>
+    <SolidColorBrush x:Key="BrandSolidBrush" Color="{StaticResource BrandStart}"/>
+    <SolidColorBrush x:Key="NavigationInkBrush" Color="#58708A"/>
+    <SolidColorBrush x:Key="NavigationLabelBrush" Color="#4F6274"/>
+    <SolidColorBrush x:Key="LinkBrush" Color="#176092"/>
+    <SolidColorBrush x:Key="HoverBorderBrush" Color="#7FD0E3"/>
+    <SolidColorBrush x:Key="HoverBrush" Color="#EFFAFD"/>
+    <SolidColorBrush x:Key="SearchFillBrush" Color="#F3FAFD"/>
+    <SolidColorBrush x:Key="SearchLineBrush" Color="#D3E8F0"/>
+    <SolidColorBrush x:Key="SearchFocusBrush" Color="#58C4DC"/>
+    <SolidColorBrush x:Key="TrackBrush" Color="#C9DCE6"/>
+    <SolidColorBrush x:Key="TrackHoverBrush" Color="#9FC4D6"/>
+    <SolidColorBrush x:Key="SegmentLineBrush" Color="#B8E4F0"/>
+    <SolidColorBrush x:Key="RunningBackgroundBrush" Color="#E2F7EF"/>
+    <SolidColorBrush x:Key="RunningInkBrush" Color="#067647"/>
+    <LinearGradientBrush x:Key="HomePreviewBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#E4F3FA" Offset="0"/>
+        <GradientStop Color="#F1FAFC" Offset="1"/>
+    </LinearGradientBrush>
+    <DropShadowEffect x:Key="NavigationShadow" Color="#1278BE" BlurRadius="18" ShadowDepth="8" Direction="270" Opacity=".28"/>
+    <DropShadowEffect x:Key="WorkspaceShadow" Color="#145A8C" BlurRadius="40" ShadowDepth="10" Direction="270" Opacity=".10"/>
+    <SolidColorBrush x:Key="FocusHaloBrush" Color="#5058C4DC"/>
+    <SolidColorBrush x:Key="PlaceholderLineBrush" Color="#9FB8C8"/>
+    <SolidColorBrush x:Key="DangerInkBrush" Color="#B42318"/>
+    <SolidColorBrush x:Key="DangerHoverBrush" Color="#FEF3F2"/>
+    <DropShadowEffect x:Key="ResourceMenuShadow" Color="#125C8C" BlurRadius="28" ShadowDepth="12" Direction="270" Opacity=".20"/>
+</ResourceDictionary>
