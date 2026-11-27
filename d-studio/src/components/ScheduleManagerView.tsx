@@ -1113,7 +1113,7 @@ export const ScheduleManagerView: React.FC<ScheduleManagerViewProps> = ({
                           {selectedFormTheme.displayName}
                         </div>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-[#7A7690]">
-                          <span>{selectedFormTheme.category}</span>
+                          <span>{selectedFormTheme.category === '动态时钟' ? '时钟' : selectedFormTheme.category}</span>
                           {selectedFormTheme.isFavorite && (
                             <>
                               <span aria-hidden="true">·</span>
@@ -1326,7 +1326,7 @@ export const ScheduleManagerView: React.FC<ScheduleManagerViewProps> = ({
                             {item.displayName}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#8B87A1]">
-                            <span>{item.category}</span>
+                            <span>{item.category === '动态时钟' ? '时钟' : item.category}</span>
                             {item.isFavorite && (
                               <>
                                 <span aria-hidden="true">·</span>

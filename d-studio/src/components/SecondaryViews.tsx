@@ -1,5 +1,6 @@
+import { UpdatesPanel } from './UpdatesPanel';
 import type { ScheduleRuntime } from '../services/desktopBridge';
-import { desktopMode, scanDevices, setRestoreOutput, devicePower, desktopPreferences, setAutoStartNative, cleanTemporaryFiles, exportPackage, inspectPackage, importPackage, cancelPackage, PackageSummary } from '../services/desktopBridge';
+import { setCloseToTray, renameDevice, desktopMode, scanDevices, setRestoreOutput, devicePower, desktopPreferences, setAutoStartNative, cleanTemporaryFiles, exportPackage, inspectPackage, importPackage, cancelPackage, PackageSummary } from '../services/desktopBridge';
 import React, { useState, useEffect } from 'react';
 import {
   Monitor,
@@ -57,7 +58,7 @@ interface SecondaryViewsProps {
   onTogglePlaylist: (id: string) => void;
   onSelectDevice: (deviceId: string) => void;
   onUpdateDevice: (deviceId: string, patch: Partial<DeviceInfo>) => void;
-  editorSession: { project: EditorThemeProject; sourceThemeId?: string } | null;
+  editorSession: { project: EditorThemeProject; sourceThemeId?: string; sessionId?: string } | null;
   editorSidebarMode?: SidebarMode;
   onChangeEditorSidebarMode?: (mode: SidebarMode) => void;
   onEnterEditor: (project: EditorThemeProject, sourceThemeId?: string) => void;
@@ -189,23 +190,31 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
   const [onlineSort, setOnlineSort] = useState<'popular' | 'newest'>('popular');
 
   // Settings local state
+  const [closeToTray, setCloseToTrayState] = useState(false);
   const [autoStart, setAutoStart] = useState(!desktopMode);
+  const [packageProgress, setPackageProgress] = useState('');
+  useEffect(() => {
+    const update = (event: Event) => setPackageProgress((event as CustomEvent<string>).detail);
+    window.addEventListener('studio-package-progress', update);
+    return () => window.removeEventListener('studio-package-progress', update);
+  }, []);
   const [packageBusy, setPackageBusy] = useState(false);
   const [packagePreview, setPackagePreview] = useState<PackageSummary | null>(null);
   const [packageThemeId, setPackageThemeId] = useState('');
   const [restoreOutput, setRestoreOutputState] = useState(true);
   useEffect(() => {
     if (desktopMode) void scanDevices().then(state => setRestoreOutputState(state.restore)).catch(console.error);
-    if (desktopMode) void desktopPreferences().then(state => setAutoStart(state.autoStart)).catch(console.error);
+    if (desktopMode) void desktopPreferences().then(state => { setAutoStart(state.autoStart); setCloseToTrayState(state.closeToTray); }).catch(console.error);
   }, []);
   const [hardwareAccel, setHardwareAccel] = useState(true);
   const [smoothFade, setSmoothFade] = useState(true);
   const packageAction = async (action: () => Promise<void>) => {
     if (packageBusy) return;
+    setPackageProgress('等待选择文件或处理备份…');
     setPackageBusy(true);
     try { await onFlushLibrary(); await action(); }
     catch (error) { onNotify((error as Error).message); }
-    finally { setPackageBusy(false); }
+    finally { setPackageBusy(false); setPackageProgress(''); }
   };
 
   const isPortrait = activeDevice.orientation === 'portrait';
@@ -268,7 +277,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
           <div>
             <h2 className="text-[20px] font-bold text-[#1A172B]">在线资源广场</h2>
             <p className="mt-0.5 text-[13px] text-[#7A7690]">
-              精选适配 {activeDevice.name}（{activeDevice.resolution}）的动态时钟与全景壁纸
+              精选适配 {activeDevice.name}（{activeDevice.resolution}）的时钟与全景壁纸
             </p>
           </div>
 
@@ -316,7 +325,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
                       : 'text-[#6B6880] hover:text-[#1A172B]'
                   }`}
                 >
-                  {cat}
+                  {cat === '动态时钟' ? '时钟' : cat}
                 </button>
               ))}
             </div>
@@ -375,10 +384,11 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
     if (editorSession) {
       return (
         <ThemeEditorV2
-          key={editorSession.project.template_id}
+          key={editorSession.sessionId || editorSession.sourceThemeId || editorSession.project.template_id}
           initialProject={editorSession.project}
           sourceThemeId={editorSession.sourceThemeId}
           activeDevice={activeDevice}
+          devices={devices}
           themes={themes}
           onSaveOnly={(theme) => onSaveEditorTheme(theme, false)}
           onSaveAndApply={(theme) => onSaveEditorTheme(theme, true)}
@@ -396,6 +406,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
         themes={themes}
         activeTheme={activeTheme}
         activeDevice={activeDevice}
+        devices={devices}
         onEnterEditor={onEnterEditor}
         onApplyTheme={onApplyTheme}
         onDeleteCustomTheme={onDeleteCustomTheme}
@@ -500,6 +511,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
                     </div>
                     <div>
                       <h3 className="text-[16px] font-bold text-[#1A172B]">{dev.name}</h3>
+                      {desktopMode && <button className="text-xs text-[#5E45F8]" onClick={() => { const name = window.prompt('设备名称', dev.name); if (name !== null) void renameDevice(dev.serial, name).then(() => onUpdateDevice(dev.id, { name: name.trim() || dev.model })).catch(e => onNotify(e.message)); }}>修改名称</button>}
                       <div className="mt-0.5 font-mono-tabular text-[12px] text-[#7A7690]">
                         {dev.serial} · {dev.resolution} · {dev.firmware}
                       </div>
@@ -651,9 +663,14 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
     return (
       <div className="max-w-3xl space-y-5 rounded-[24px] bg-white p-6 shadow-[0_12px_32px_rgba(30,20,80,0.04)]">
         <h2 className="text-[20px] font-bold text-[#1A172B]">系统与偏好设置</h2>
+        <UpdatesPanel flush={onFlushLibrary} />
         <div className="divide-y divide-[#F1EFF8]">
           {[
             ...(desktopMode ? [{
+              icon: Power, title: '关闭窗口时最小化到系统托盘',
+              desc: '保留设备输出，可从托盘菜单退出软件', checked: closeToTray,
+              toggle: () => { void setCloseToTray(!closeToTray).then(v => setCloseToTrayState(v.closeToTray)).catch(e => onNotify(e.message)); },
+            }, {
               icon: Power,
               title: '启动时恢复上次输出',
               desc: '按设备序列号恢复壁纸与方向，已暂停的设备保持暂停',
@@ -662,7 +679,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
             }] : []),
             {
               icon: Power,
-              title: '开机自动启动 D Studio',
+              title: '开机自动启动 小屏宝PixBuddy',
               desc: desktopMode ? '当前 Windows 用户登录后最小化启动，按恢复设置处理输出' : '系统登录后静默驻留托盘并立即恢复上次副屏内容',
               checked: autoStart,
               toggle: () => { if (desktopMode) void setAutoStartNative(!autoStart).then(v => setAutoStart(v.autoStart)).catch(e => onNotify(e.message)); else setAutoStart(v => !v); },
@@ -670,7 +687,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
             {
               icon: Sparkles,
               title: 'GPU 硬件渲染加速',
-              desc: desktopMode ? '由 WebView2 按驱动能力自动选择，暂不支持手动切换' : '使用显卡加速高帧率动态时钟与玻璃拟态过渡效果',
+              desc: desktopMode ? '由 WebView2 按驱动能力自动选择，暂不支持手动切换' : '使用显卡加速高帧率时钟与玻璃拟态过渡效果',
               checked: desktopMode ? false : hardwareAccel,
               disabled: desktopMode,
               toggle: () => setHardwareAccel((v) => !v),
@@ -738,6 +755,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
           <h3 className="font-bold text-[#1A172B]">备份、迁移与工程包</h3>
           <p className="text-[12px] text-[#7A7690]">完整备份包含资源库、回收素材、图片和视频依赖、列表、定时及设备状态。工程包可独立导入另一台电脑。</p>
           <div className="flex flex-wrap gap-2">
+            {packageBusy && <p role="status" className="w-full text-xs text-[#7A7690]">{packageProgress}</p>}
             <button disabled={packageBusy} className="rounded-xl bg-[#5E45F8] px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-50" onClick={() => void packageAction(async () => { const result = await exportPackage(); if (!result.cancelled) onNotify('完整备份已保存：' + result.path); })}>导出完整备份</button>
             <button disabled={packageBusy} className="rounded-xl border bg-white px-3 py-2 text-[12px]" onClick={() => void packageAction(async () => { const result = await inspectPackage(); if (!result.cancelled) setPackagePreview(result); })}>导入或恢复备份包</button>
           </div>
@@ -752,7 +770,20 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
             <p>已通过完整性校验：{packagePreview.themes} 项素材、{packagePreview.playlists} 个列表、{packagePreview.schedules} 条定时。</p><p>{packagePreview.note}</p>
             <div className="flex flex-wrap gap-2">{(['merge', ...(packagePreview.scope === 'workspace' ? ['restore'] : [])] as ('merge' | 'restore')[]).map(mode => <button key={mode} disabled={packageBusy} className="rounded-lg border px-3 py-2" onClick={() => void packageAction(async () => {
               const result = await importPackage(packagePreview.token, mode);
-              Object.entries(result.preferences ?? {}).forEach(([key, value]) => { if (key.startsWith('studio-') && typeof value === 'string') localStorage.setItem(key, value); });
+              Object.entries(result.preferences ?? {}).forEach(([key, value]) => {
+                  if (typeof value !== 'string') return;
+                  if (key === 'd92-te-custom-assets-v1') {
+                    const incoming = JSON.parse(value);
+                    if (!Array.isArray(incoming)) throw new Error('自定义素材预设格式无效。');
+                    const existing = mode === 'merge' ? JSON.parse(localStorage.getItem(key) || '[]') : [];
+                    const merged = [...existing];
+                    for (const preset of incoming) {
+                      if (merged.some(item => JSON.stringify(item.elements) === JSON.stringify(preset.elements) && item.name === preset.name)) continue;
+                      merged.push({ ...preset, id: merged.some(item => item.id === preset.id) ? crypto.randomUUID() : preset.id });
+                    }
+                    localStorage.setItem(key, JSON.stringify(merged));
+                  } else if (mode === 'restore' && key.startsWith('studio-')) localStorage.setItem(key, value);
+                });
               location.reload();
             })}>{mode === 'merge' ? '合并导入，保留原内容' : '恢复整份备份并暂停输出'}</button>)}<button disabled={packageBusy} onClick={() => { setPackagePreview(null); void cancelPackage().catch(e => onNotify(e.message)); }}>取消</button></div>
           </div>}

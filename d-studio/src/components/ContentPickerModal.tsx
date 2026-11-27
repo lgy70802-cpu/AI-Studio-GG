@@ -85,7 +85,7 @@ export const ContentPickerModal: React.FC<ContentPickerModalProps> = ({
                   tab === cat ? 'bg-[#5E45F8] text-white' : 'text-[#6B6880] hover:text-[#1A172B]'
                 }`}
               >
-                {cat}
+                {cat === '动态时钟' ? '时钟' : cat}
               </button>
             ))}
           </div>

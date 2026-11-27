@@ -80,12 +80,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-white/75">
-            <span className="inline-block h-2 w-2 rounded-full bg-[#34D399]" />
-            <span>{activeDevice.outputStatus ?? (isPlaying ? '正在输出' : '已暂停输出')}</span>
+            <span className={`inline-block h-2 w-2 rounded-full ${activeDevice.status === '离线' ? 'bg-red-400' : 'bg-[#34D399]'}`} />
+            <span>{activeDevice.status === '离线' ? '设备已离线 · 上次显示的内容' : activeDevice.outputStatus ?? (isPlaying ? '正在输出' : '已暂停输出')}</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono-tabular">{activeDevice.resolution}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono-tabular">{activeDevice.serial}</span>
+            <span className="font-mono-tabular">{activeDevice.name}</span>
           </div>
           <h2 className="mt-1 truncate text-[18px] sm:text-[20px] font-bold tracking-tight text-white">
             {activeTheme.displayName}
@@ -146,12 +146,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <ImageIcon className="h-3.5 w-3.5 text-[#5E45F8]" />
             <span>更换</span>
           </button>}
-          {isPortrait && (
-            <button type="button" onClick={() => onEditTheme(activeTheme)}
-              className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white whitespace-nowrap">
-              <Pencil className="h-3.5 w-3.5" />编辑
-            </button>
-          )}
+
         </div>
       </div>
 
@@ -182,7 +177,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       {/* Card Footer Quick Playback Strip */}
       <div className="relative z-10 mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3.5 text-[12px] text-white/75">
         <div className="flex items-center gap-2.5 font-mono-tabular">
-          <span>{activeTheme.category}</span>
+          <span>{activeTheme.category === '动态时钟' ? '时钟' : activeTheme.category}</span>
           {activeDevice.renderFps != null && <span>合成 {activeDevice.renderFps.toFixed(1)} FPS</span>}
           {activeDevice.videoDuration != null && <span className="font-mono-tabular">
             {Math.floor(activeDevice.videoPosition ?? 0)} / {Math.round(activeDevice.videoDuration)}s · {(activeDevice.videoFps ?? 0).toFixed(1)} FPS
@@ -231,6 +226,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           >
             <SkipForward className="h-3.5 w-3.5" />
           </button>
+          {isPortrait && <button type="button" onClick={() => onEditTheme(activeTheme)} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 text-white"><Pencil className="h-3.5 w-3.5" />编辑</button>}
           {!isPortrait && <>
             <button type="button" onClick={onOpenPicker}
               className="flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-[12px] font-semibold text-[#1A172B] transition-colors hover:bg-[#F4F2FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">

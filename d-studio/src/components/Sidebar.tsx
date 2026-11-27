@@ -10,7 +10,6 @@ import {
   Monitor,
   Settings,
   ArrowRight,
-  Layers,
   PanelLeftClose,
   PanelLeftOpen,
   EyeOff,
@@ -84,24 +83,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={isIconsOnly ? 'flex w-full flex-col items-center' : ''}>
         {/* Brand Lockup */}
         <div
-          className={`mb-5 flex items-center ${
+          className={`group relative mb-5 flex items-center ${
             isIconsOnly ? 'flex-col gap-2' : 'justify-between gap-1'
           }`}
         >
           <button
             type="button"
             onClick={() => onSelectNav('home')}
-            title="D Studio · 返回首页"
-            className="flex items-center gap-2.5 rounded-xl px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8]"
+            title="小屏宝PixBuddy · 返回首页"
+            className="flex w-full items-center justify-center rounded-xl py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8]"
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#9C51FF] via-[#6A4BFF] to-[#4E35E8] text-white shadow-[0_8px_20px_rgba(94,69,248,0.34)]">
-              <Layers className="h-4 w-4" />
-            </div>
-            {!isIconsOnly && (
-              <span className="whitespace-nowrap text-[17px] font-extrabold tracking-tight text-[#1A172B]">
-                D Studio
-              </span>
-            )}
+            <img
+              src={isIconsOnly ? '/pixbuddy-logo.png' : '/pixbuddy-wordmark.png'}
+              alt="PIXBUDDY"
+              className={isIconsOnly ? 'h-8 w-8 object-contain' : 'h-10 w-full object-contain'}
+            />
           </button>
 
           {onChangeMode && !isIconsOnly && (
@@ -110,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onChangeMode('icons')}
               title="收起为仅显示图标"
               aria-label="收起为仅显示图标"
-              className="rounded-lg p-1 text-[#7A7690] transition-colors hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
+              className="absolute -right-1 -top-3 rounded-lg bg-white p-1 text-[#7A7690] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[#EFEBFD] hover:text-[#5E45F8]"
             >
               <PanelLeftClose className="h-4 w-4" />
             </button>
@@ -193,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={() => onSelectNav('devices')}
-            title={`${activeDevice.name} · ${activeDevice.resolution} (${isPlaying ? '输出中' : '已暂停'})`}
+            title={`${activeDevice.name} · ${activeDevice.resolution} (${activeDevice.status === '离线' ? '设备已离线' : isPlaying ? '输出中' : '已暂停'})`}
             aria-label="管理设备"
             className="aurora-dark-card flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-[0_10px_22px_rgba(24,9,66,0.28)] transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5E45F8]"
           >
@@ -230,7 +226,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {activeDevice.name}
             </div>
             <div className="mt-0.5 truncate font-mono-tabular text-[10.5px] text-white/70">
-              {activeDevice.resolution} · {isPlaying ? '输出中' : '已暂停'}
+              {activeDevice.resolution} · {activeDevice.status === '离线' ? '设备已离线' : isPlaying ? '输出中' : '已暂停'}
             </div>
 
             {/* Isometric 3D Prism Graphic matching Figure 2 */}

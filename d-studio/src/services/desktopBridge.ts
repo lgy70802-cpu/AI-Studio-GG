@@ -10,7 +10,9 @@ const session = crypto.randomUUID();
 let sequence = 0;
 const pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>();
 bridge?.addEventListener('message', event => {
-  const { id, result, error } = event.data;
+  const { id, result, error, progress, updateProgress } = event.data;
+  if (updateProgress) { window.dispatchEvent(new CustomEvent('studio-update-progress', { detail: updateProgress })); return; }
+  if (progress) { window.dispatchEvent(new CustomEvent('studio-package-progress', { detail: progress })); return; }
   const request = pending.get(id);
   if (!request) return;
   pending.delete(id);
@@ -22,7 +24,7 @@ function request<T>(command: string, payload: object = {}): Promise<T> {
     const id = session + String(++sequence);
     pending.set(id, { resolve: value => resolve(value as T), reject });
     bridge!.postMessage({ id, command, ...payload });
-    window.setTimeout(() => {
+    if (!command.startsWith('capture-') && !command.startsWith('package-') && !command.startsWith('updates-')) window.setTimeout(() => {
       if (pending.delete(id)) reject(new Error('设备操作超时，请检查连接后重试。'));
     }, 60000);
   });
@@ -45,15 +47,15 @@ export async function outputImage(device: DeviceInfo, source: string, themeId: s
 export const configureDevice = (serial: string, patch: { portrait?: boolean; flipped?: boolean; playing?: boolean }) =>
   request('configure', { serial, ...patch });
 export const devicePower = (serial: string, patch: { brightness?: number; sleepMinutes?: number; action?: 'standby' | 'wake' }) => request('device-power', { serial, ...patch });
-export const desktopPreferences = () => request<{ autoStart: boolean }>('desktop-preferences');
-export const setAutoStartNative = (enabled: boolean) => request<{ autoStart: boolean }>('desktop-autostart', { enabled });
+export const desktopPreferences = () => request<{ autoStart: boolean; closeToTray: boolean }>('desktop-preferences');
+export const setAutoStartNative = (enabled: boolean) => request<{ autoStart: boolean; closeToTray: boolean }>('desktop-autostart', { enabled });
 export const cleanTemporaryFiles = () => request<{ bytes: number }>('cache-clean');
 export interface PackageSummary { cancelled: boolean; token: string; scope: string; themes: number; playlists: number; schedules: number; note: string }
 export const inspectPackage = () => request<PackageSummary>('package-inspect');
 export const cancelPackage = () => request('package-cancel');
 export const importPackage = (token: string, mode: 'merge' | 'restore') => request<{ preferences: Record<string, string> }>('package-import', { token, mode });
 export const exportPackage = (themeId?: string) => request<{ cancelled: boolean; path: string }>('package-export', {
-  themeId, preferences: Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('studio-'))),
+  themeId, preferences: Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('studio-') || key === 'd92-te-custom-assets-v1')),
 });
 export const selectDesktopDevice = (serial: string) => request('select', { serial });
 export const setRestoreOutput = (enabled: boolean) => request('restore', { enabled });
@@ -116,3 +118,21 @@ export async function importVideo(file: File, progress: (percent: number) => voi
 }
 
 export const controlWindow = (action: 'minimize' | 'maximize' | 'close') => bridge?.postMessage({ command: 'window-control', action });
+
+export interface UpdateManifest { Version: string; Notes: string; Url: string; Sha256: string; Bytes: number }
+export const updateStatus = () => request<{version: string; source: string}>('updates-status');
+export const checkUpdates = (source: string) => request<{current: string; available: UpdateManifest | null}>('updates-check', { source });
+export const installUpdate = () => request<{backup: string}>('updates-install', {
+  preferences: Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('studio-') || key.startsWith('d92-'))),
+});
+export const cancelUpdate = () => request('updates-cancel');
+
+export const captureDesktopImage = (width: number, height: number) => request<{ cancelled: boolean; src: string; width: number; height: number; name: string }>('capture-shot', { width, height });
+
+
+export const captureDesktopVideo = (width: number, height: number) => request<{ cancelled: boolean; src: string; poster: string; width: number; height: number; name: string; dur: number }>('capture-record', { width, height });
+
+export const refreshCurrentMedia = (serial: string, themeId: string, portrait: boolean, sourceThemeId: string) => request<boolean>('refresh-current-media', { serial, themeId, portrait, sourceThemeId });
+
+export const setCloseToTray = (enabled: boolean) => request<{ closeToTray: boolean }>("window-preferences", { enabled });
+export const renameDevice = (serial: string, name: string) => request<boolean>("device-rename", { serial, name });

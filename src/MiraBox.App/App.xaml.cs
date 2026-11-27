@@ -14,7 +14,7 @@ public partial class App : Application
         var hash=WorkspaceIdentity.Hash(directory);
         instance=new Mutex(false,"Local\\MiraBoxV67-"+hash);
         try{ownsInstance=instance.WaitOne(0);}catch(AbandonedMutexException){ownsInstance=true;}
-        if(!ownsInstance){MessageBox.Show("此工作区已有 MiraBox Studio 正在运行。请切换到现有窗口，或先关闭后再启动。","MiraBox Studio");Shutdown();return;}
+        if(!ownsInstance){MessageBox.Show("此工作区已有 小屏宝PixBuddy 正在运行。请切换到现有窗口，或先关闭后再启动。","小屏宝PixBuddy");Shutdown();return;}
         try { var window = new StudioWindow(); MainWindow = window; if (e.Args.Contains("--autostart")) window.WindowState = WindowState.Minimized; window.Show(); }
         catch (Exception ex)
         {

@@ -31,5 +31,8 @@
 **/desktop-state.json
 **/library-workspace.json
 **/schedule-state.json
+**/update-source.json
+**/Updates/Downloads/
+**/Updates/Backups/
 **/WebView2/
 .publish/

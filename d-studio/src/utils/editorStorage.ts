@@ -276,7 +276,7 @@ export function saveCustomAsset(
     elements: normalized,
   };
   const existing = loadCustomAssets();
-  const next = [asset, ...existing].slice(0, 60);
+  const next = [asset, ...existing];
   try {
     localStorage.setItem(CUSTOM_ASSETS_STORAGE_KEY, JSON.stringify(next));
     return { ok: true, asset, list: next };

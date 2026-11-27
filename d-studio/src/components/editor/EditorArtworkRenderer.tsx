@@ -1229,6 +1229,7 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
                 fontSize: `${el.size}cqmin`,
                 fontFamily: fontCss,
                 fontWeight: wt,
+                fontVariantNumeric: 'tabular-nums',
                 letterSpacing: ls,
                 lineHeight: 1.02,
                 whiteSpace: 'nowrap',
@@ -1267,7 +1268,7 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
                       </i>
                     ))}
                   </span>
-                  {el.sec && !portrait && (
+                  {el.sec && (
                     <span className="ml-[0.18em] text-[0.42em] opacity-80">{ss}</span>
                   )}
                 </div>
@@ -1284,7 +1285,7 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
                     {mm}
                   </span>
                   {!el.h24 && <span className="text-[0.34em] font-semibold opacity-80">{ap}</span>}
-                  {el.sec && el.part !== 'hm' && !portrait && (
+                  {el.sec && el.part !== 'hm' && (
                     <span className="text-[0.45em] opacity-75">{ss}</span>
                   )}
                 </div>

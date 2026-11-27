@@ -50,12 +50,14 @@ import type { SidebarMode } from '../Sidebar';
 import { ContentCategory, DeviceInfo, ThemeItem } from '../../data/themes';
 import {
   EDITOR_DEVICE_SPECS,
+  availableEditorSpecs,
   EDITOR_RAIL_TABS,
   PLUGIN_CAPABILITY_REGISTRY,
   WIDGET_CATALOG,
   computeFit100BoxPct,
   computeImportMediaBox,
   computeNaturalBoxPct,
+  createBlankEditorProject,
   genEditorId,
   makeElement,
   readImageDimensions,
@@ -109,6 +111,7 @@ interface ThemeEditorV2Props {
   initialProject: EditorThemeProject;
   sourceThemeId?: string;
   activeDevice: DeviceInfo;
+  devices: DeviceInfo[];
   themes: ThemeItem[];
   onSaveOnly: (theme: ThemeItem, project: EditorThemeProject) => void | Promise<boolean>;
   onSaveAndApply: (theme: ThemeItem, project: EditorThemeProject) => void | Promise<boolean>;
@@ -229,6 +232,44 @@ function cloneProj(p: EditorThemeProject): EditorThemeProject {
   return structuredClone(p);
 }
 
+function editorContent(project: EditorThemeProject): string {
+  const { updated_at, ...content } = project;
+  return JSON.stringify(content);
+}
+
+function validateImportedProject(project: EditorThemeProject) {
+  if (!project || !project.bg || !['style', 'color', 'gradient', 'image', 'video'].includes(project.bg.kind) ||
+      !Array.isArray(project.master) || !Array.isArray(project.layouts) || project.layouts.length === 0)
+    throw new Error('工程需要有效的背景、图层和至少一个尺寸布局。');
+  for (const key of ['locks', 'names'] as const) {
+    const value = project[key];
+    if (value != null && (typeof value !== 'object' || Array.isArray(value)))
+      throw new Error('图层锁定或名称记录格式无效。');
+  }
+  if (project.name !== undefined && typeof project.name !== 'string') throw new Error('主题名称必须是文字。');
+  const validateElements = (elements: EditorElement[]) => {
+    if (!Array.isArray(elements)) throw new Error('布局图层必须是数组。');
+    const ids = new Set<string>();
+    for (const element of elements) {
+      if (!element || typeof element.id !== 'string' || !element.id || ids.has(element.id) ||
+          !['clock', 'date', 'text', 'image', 'video', 'shape', 'motion', 'widget', 'plugin'].includes(element.kind))
+        throw new Error('图层类型或标识无效，图层标识不能重复。');
+      ids.add(element.id);
+      if (typeof element.a !== 'string' || !/^[tmb][lcr]$/.test(element.a)) throw new Error('图层锚点无效。');
+      for (const key of ['x', 'y', 'size', 'w', 'h', 'alpha', 'rot'] as const)
+        if (key in element && !Number.isFinite((element as unknown as Record<string, unknown>)[key]))
+          throw new Error('图层位置和尺寸必须是有效数字。');
+    }
+  };
+  validateElements(project.master);
+  for (const layout of project.layouts) {
+    if (!layout || !Array.isArray(layout.size) || layout.size.length !== 2 ||
+        !layout.size.every(value => Number.isFinite(value) && value > 0))
+      throw new Error('布局宽高必须是大于零的有效数字。');
+    if (layout.elements !== undefined) validateElements(layout.elements);
+  }
+}
+
 function detachIfFollowing(draft: EditorThemeProject, layIdx: number): boolean {
   const lay = draft.layouts[layIdx];
   if (layIdx > 0 && lay && lay.follow) {
@@ -282,6 +323,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   initialProject,
   sourceThemeId,
   activeDevice,
+  devices,
   themes,
   onSaveOnly,
   onSaveAndApply,
@@ -292,10 +334,21 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   onChangeSidebarMode,
 }) => {
   const [project, setProject] = useState<EditorThemeProject>(() => cloneProj(initialProject));
+  const [saveThemeId] = useState(() => {
+    const source = themes.find(theme => theme.id === (sourceThemeId || initialProject.template_id));
+    return source?.source === 'custom' ? source.id : `custom-${genEditorId('theme')}`;
+  });
   const latestProject = useRef(project);
   latestProject.current = project;
   const saving = useRef(false);
-  const [layoutIndex, setLayoutIndex] = useState<number>(0);
+  const [layoutIndex, setLayoutIndex] = useState(() => {
+    const portrait = activeDevice.orientation === 'portrait';
+    const width = portrait ? (activeDevice.model === 'D69' ? 480 : 462) : (activeDevice.model === 'D69' ? 1280 : 1920);
+    const height = portrait ? (activeDevice.model === 'D69' ? 1280 : 1920) : (activeDevice.model === 'D69' ? 480 : 462);
+    const exact = initialProject.layouts.findIndex(layout => layout.size[0] === width && layout.size[1] === height);
+    if (exact >= 0) return exact;
+    return Math.max(0, initialProject.layouts.findIndex(layout => (layout.size[0] < layout.size[1]) === portrait));
+  });
   const [activeRailTab, setActiveRailTab] = useState<EditorRailTab>('add');
   const [leftCollapsed, setLeftCollapsed] = useState<boolean>(false);
   const [rightCollapsed, setRightCollapsed] = useState<boolean>(false);
@@ -316,9 +369,12 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   const [spacePressed, setSpacePressed] = useState<boolean>(false);
 
   // Undo/Redo history (up to 50 steps)
-  const [history, setHistory] = useState<EditorThemeProject[]>(() => [cloneProj(initialProject)]);
+  const [history, setHistory] = useState(() => [{ project: cloneProj(initialProject), size: initialProject.layouts[layoutIndex].size }]);
   const [historyIdx, setHistoryIdx] = useState<number>(0);
-  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [savedContent, setSavedContent] = useState(() => editorContent(initialProject));
+  const isDirty = editorContent(project) !== savedContent;
+  const ownedDraft = useRef(false);
+  const [draftFailed, setDraftFailed] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
 
   // Clipboard, Custom Assets, Palette & Recent Local Imports
@@ -396,6 +452,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       const raw = localStorage.getItem(draftStorageKey);
       if (raw) {
         const parsed = JSON.parse(raw);
+        validateImportedProject(parsed.project);
         if (
           parsed?.project?.template_id &&
           parsed?.savedAt &&
@@ -411,11 +468,19 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
 
   // Autosave draft every 1.5s when dirty
   useEffect(() => {
-    if (!isDirty) return;
+    if (!isDirty) {
+      if (ownedDraft.current) {
+        try { localStorage.removeItem(draftStorageKey); ownedDraft.current = false; setDraftSavedAt(null); setDraftFailed(false); }
+        catch { setDraftFailed(true); }
+      } else { setDraftSavedAt(null); setDraftFailed(false); }
+      return;
+    }
     const t = window.setTimeout(() => {
       try {
         const savedAt = Date.now();
         localStorage.setItem(draftStorageKey, JSON.stringify({ project, savedAt }));
+        ownedDraft.current = true;
+        setDraftFailed(false);
         const d = new Date(savedAt);
         setDraftSavedAt(
           `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(
@@ -423,7 +488,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           ).padStart(2, '0')}`
         );
       } catch {
-        // ignore quota errors
+        setDraftFailed(true);
+        setDraftSavedAt(null);
       }
     }, 1500);
     return () => window.clearTimeout(t);
@@ -485,25 +551,28 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         if (recordHistory) {
           setHistory((h) => {
             const sliced = h.slice(0, historyIdx + 1);
-            const appended = [...sliced, cloneProj(next)].slice(-50);
+            sliced[sliced.length - 1] = { ...sliced[sliced.length - 1], size: [canvasPxW, canvasPxH] };
+            const nextLayout = next.layouts.length > prev.layouts.length ? next.layouts[next.layouts.length - 1]
+              : next.layouts.find(layout => layout.size[0] === canvasPxW && layout.size[1] === canvasPxH) ?? next.layouts[0];
+            const appended = [...sliced, { project: cloneProj(next), size: nextLayout.size }].slice(-50);
             setHistoryIdx(appended.length - 1);
             return appended;
           });
         }
         return next;
       });
-      setIsDirty(true);
     },
-    [historyIdx]
+    [historyIdx, canvasPxW, canvasPxH, layoutIndex]
   );
 
   const handleUndo = useCallback(() => {
     if (historyIdx <= 0) return;
     const nextIdx = historyIdx - 1;
     setHistoryIdx(nextIdx);
-    setProject(cloneProj(history[nextIdx]));
+    const entry = history[nextIdx];
+    setProject(cloneProj(entry.project));
+    setLayoutIndex(Math.max(0, entry.project.layouts.findIndex(layout => layout.size[0] === entry.size[0] && layout.size[1] === entry.size[1])));
     setSelectedIds([]);
-    setIsDirty(true);
     onNotify('已撤销上一步操作');
   }, [history, historyIdx, onNotify]);
 
@@ -511,9 +580,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     if (historyIdx >= history.length - 1) return;
     const nextIdx = historyIdx + 1;
     setHistoryIdx(nextIdx);
-    setProject(cloneProj(history[nextIdx]));
+    const entry = history[nextIdx];
+    setProject(cloneProj(entry.project));
+    setLayoutIndex(Math.max(0, entry.project.layouts.findIndex(layout => layout.size[0] === entry.size[0] && layout.size[1] === entry.size[1])));
     setSelectedIds([]);
-    setIsDirty(true);
     onNotify('已重做操作');
   }, [history, historyIdx, onNotify]);
 
@@ -2553,7 +2623,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     };
     const existing = themes.find((t) => t.id === (sourceThemeId || project.template_id));
     return {
-      id: existing?.source === 'custom' ? existing.id : `custom-${project.template_id}`,
+      id: saveThemeId,
       name: project.name || 'D92_未命名主题',
       displayName: project.name || 'D92_未命名主题',
       category: project.category,
@@ -2579,7 +2649,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       accentHex: '#5E45F8',
       editorProject: syncedProject,
     };
-  }, [canvasPxH, canvasPxW, project, sourceThemeId, themes]);
+  }, [canvasPxH, canvasPxW, project, sourceThemeId, themes, saveThemeId]);
 
   const handleSave = async (applyNow: boolean) => {
     if (saving.current) return false;
@@ -2588,14 +2658,19 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     const out = buildThemeItem();
     try {
       const result = await (applyNow ? onSaveAndApply(out, out.editorProject!) : onSaveOnly(out, out.editorProject!));
-      if (result === false || latestProject.current !== submitted) return false;
+      if (result === false) return false;
+      setSavedContent(editorContent(submitted));
+      if (latestProject.current !== submitted) {
+        onNotify('已保存提交时的版本，之后的新修改仍待保存。');
+        return false;
+      }
     try {
       localStorage.removeItem(draftStorageKey);
     } catch {
       // ignore
     }
-    setIsDirty(false);
     setDraftSavedAt(null);
+    setDraftFailed(false);
     return true;
     } catch (error) {
       onNotify('保存失败：' + (error as Error).message);
@@ -2603,6 +2678,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     } finally { saving.current = false; }
   };
 
+  const availableSpecs = availableEditorSpecs(devices);
+  const specKey = availableSpecs.map(spec => spec.id).join();
   const handleSwitchDeviceSpec = (specSize: [number, number]) => {
     const foundIdx = project.layouts.findIndex(
       (l) => l.size[0] === specSize[0] && l.size[1] === specSize[1]
@@ -2625,6 +2702,14 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     setSelectedIds([]);
     onNotify(`已自动新增 ${specLabelFromSize(specSize)} 跟随画布`);
   };
+
+  useEffect(() => {
+    const knownSpec = EDITOR_DEVICE_SPECS.find(spec => spec.size[0] === canvasPxW && spec.size[1] === canvasPxH);
+    if (!knownSpec || availableSpecs.some(spec => spec.id === knownSpec.id)) return;
+    const preferred = availableSpecs.find(spec => spec.deviceModel.startsWith(activeDevice.model) &&
+      (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')) ?? availableSpecs[0];
+    handleSwitchDeviceSpec(preferred.size);
+  }, [specKey, canvasPxW, canvasPxH]);
 
   const singleSelected = selectedElements.length === 1 ? selectedElements[0] : null;
   const singleSelectedLocked = singleSelected ? Boolean(project.locks[singleSelected.id]) : false;
@@ -2662,20 +2747,27 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           reader.onload = () => {
             try {
               const parsed = JSON.parse(String(reader.result || '{}'));
-              if (!parsed.bg || !Array.isArray(parsed.master)) {
-                onNotify('JSON 格式校验失败：缺少有效的背景或图层结构');
-                return;
-              }
+              validateImportedProject(parsed);
+              const defaults = createBlankEditorProject(activeDevice, { name: parsed.name || f.name });
+              const normalizeElements = (elements: EditorElement[]) => elements.map(element => makeElement(element.kind, element));
               commitProject(() => ({
+                ...defaults,
                 ...parsed,
+                bg: { ...defaults.bg, ...parsed.bg },
+                locks: parsed.locks ?? {},
+                names: parsed.names ?? {},
+                master: normalizeElements(parsed.master),
+                layouts: parsed.layouts.map((layout: EditorThemeProject['layouts'][number]) => ({
+                  ...layout, elements: layout.elements ? normalizeElements(layout.elements) : undefined,
+                })),
                 template_id: parsed.template_id || genEditorId('imp'),
                 schema_version: parsed.schema_version || THEME_SCHEMA_VERSION,
               }));
               setLayoutIndex(0);
               setSelectedIds([]);
               onNotify(`已导入工程文件「${parsed.name || f.name}」`);
-            } catch {
-              onNotify('工程 JSON 解析失败');
+            } catch (error) {
+              onNotify('工程导入失败：' + (error as Error).message);
             }
           };
           reader.readAsText(f);
@@ -2684,6 +2776,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       />
 
       {/* ==================== ZONE A: TOP TOOLBAR (56px) ==================== */}
+      {draftFailed && <div role="alert" className="fixed bottom-16 left-1/2 z-[90] max-w-[90vw] -translate-x-1/2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 shadow-lg">草稿保存失败，修改尚未备份。请点击“保存”。</div>}
       <header className="relative z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-[#E6E4F2] bg-white/92 px-3 backdrop-blur-xl shadow-[0_2px_12px_rgba(30,20,80,0.04)]">
         {/* Left: Sidebar Mode Switcher, Return, Title, Category, Dirty Status */}
         <div className="flex min-w-0 items-center gap-2">
@@ -2765,7 +2858,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
           </select>
 
           <span className="hidden xl:inline-flex items-center gap-1 rounded-lg bg-[#F5F4FA] px-2 py-0.5 text-[10.5px] font-medium text-[#6B6880] whitespace-nowrap">
-            {isDirty
+            {draftFailed ? '草稿保存失败，请点击保存' : isDirty
               ? draftSavedAt
                 ? `已自动保存 ${draftSavedAt}`
                 : '未保存'
@@ -2807,7 +2900,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             aria-label="切换设备画布规格"
             className="rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] font-semibold text-[#1A172B] focus:border-[#5E45F8] focus:outline-none"
           >
-            {EDITOR_DEVICE_SPECS.map((s) => (
+            {availableSpecs.map((s) => (
               <option key={s.id} value={`${s.size[0]}x${s.size[1]}`}>
                 {s.label} · {s.size[0]}×{s.size[1]}
               </option>
@@ -3024,7 +3117,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             aria-label="切换设备画布规格（移动端工具栏）"
             className="rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2 py-1 text-[11px] font-semibold text-[#1A172B] focus:border-[#5E45F8] focus:outline-none"
           >
-            {EDITOR_DEVICE_SPECS.map((s) => (
+            {availableSpecs.map((s) => (
               <option key={s.id} value={`${s.size[0]}x${s.size[1]}`}>
                 {s.label} · {s.size[0]}×{s.size[1]}
               </option>
@@ -3777,6 +3870,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
               <span className="shrink-0 text-[11px] font-bold text-[#6B6880]">多规格布局:</span>
               {project.layouts.map((lay, idx) => {
+                const spec = EDITOR_DEVICE_SPECS.find(option => option.size[0] === lay.size[0] && option.size[1] === lay.size[1]);
+                if (spec && !availableSpecs.some(option => option.id === spec.id)) return null;
                 const active = idx === layoutIndex;
                 return (
                   <button
@@ -4229,6 +4324,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               <button
                 type="button"
                 onClick={() => {
+                  try { localStorage.removeItem(draftStorageKey); }
+                  catch { onNotify('无法清除草稿，请重试。'); return; }
                   setExitConfirmOpen(false);
                   onExitEditor();
                 }}
@@ -4487,7 +4584,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                         {t.displayName}
                       </div>
                       <div className="text-[10.5px] text-[#6B6880]">
-                        {t.category} · {t.resolution}
+                        {t.category === '动态时钟' ? '时钟' : t.category} · {t.resolution}
                       </div>
                     </div>
                   </button>
@@ -4512,7 +4609,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               </button>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {EDITOR_DEVICE_SPECS.map((s) => (
+              {availableSpecs.map((s) => (
                 <button
                   key={s.id}
                   type="button"

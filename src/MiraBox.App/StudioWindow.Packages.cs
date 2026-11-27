@@ -31,7 +31,10 @@ public sealed partial class StudioWindow
             Save(); SaveSchedules();
             var snapshot = librarySnapshot?.DeepClone().AsObject() ?? throw new InvalidOperationException("资源库尚未载入。");
             var preferences = message.TryGetProperty("preferences", out var prefs) ? JsonNode.Parse(prefs.GetRawText())!.AsObject() : new JsonObject();
-            await Task.Run(() => packages.Export(path!, snapshot, preferences, themeId));
+            var requestId = message.GetProperty("id").GetString();
+            Reply(new { id = requestId, progress = "正在打包素材…" });
+            await Task.Run(() => packages.Export(path!, snapshot, preferences, themeId,
+                (done, total) => Dispatcher.InvokeAsync(() => Reply(new { id = requestId, progress = $"正在打包素材 {done}/{total}" }))));
             return new { cancelled = false, path };
         }
         if (command == "package-inspect")
@@ -67,7 +70,9 @@ public sealed partial class StudioWindow
             }
             librarySnapshot = await Task.Run(() => packages.Import(inspectedPackage, replace));
             var preferencesFile = Path.Combine(inspectedPackage.Directory, "preferences.json");
-            var preferences = replace && File.Exists(preferencesFile) ? JsonNode.Parse(File.ReadAllText(preferencesFile)) : new JsonObject();
+            var preferences = File.Exists(preferencesFile) ? JsonNode.Parse(File.ReadAllText(preferencesFile)) : new JsonObject();
+            if (!replace && preferences is JsonObject importedPreferences)
+                preferences = new JsonObject { ["d92-te-custom-assets-v1"] = importedPreferences["d92-te-custom-assets-v1"]?.DeepClone() };
             if (replace)
             {
                 saved.Clear(); playlistProgress.Clear(); lastSavedState = null; savedScheduleText = null; scheduleState = new();

@@ -745,7 +745,7 @@ export const PlaylistManagerView: React.FC<PlaylistManagerViewProps> = ({
                         <div className="truncate text-[13px] font-bold text-[#1A172B]">
                           {theme.displayName}
                         </div>
-                        <div className="text-[11px] text-[#8B87A1]">{theme.category}</div>
+                        <div className="text-[11px] text-[#8B87A1]">{theme.category === '动态时钟' ? '时钟' : theme.category}</div>
                       </div>
                       <span
                         className="cursor-grab text-[#B3AEC6] hover:text-[#5E45F8]"
@@ -886,7 +886,7 @@ export const PlaylistManagerView: React.FC<PlaylistManagerViewProps> = ({
                             {theme.displayName}
                           </div>
                           <div className="text-[11px] text-[#8B87A1]">
-                            {theme.category} · <span className="font-mono-tabular">{activeDevice.resolution}</span>
+                            {theme.category === '动态时钟' ? '时钟' : theme.category} · <span className="font-mono-tabular">{activeDevice.resolution}</span>
                           </div>
                         </div>
                       </div>
@@ -1080,7 +1080,7 @@ export const PlaylistManagerView: React.FC<PlaylistManagerViewProps> = ({
                         : 'text-[#6B6880] hover:text-[#1A172B]'
                     }`}
                   >
-                    {cat}
+                    {cat === '动态时钟' ? '时钟' : cat}
                   </button>
                 ))}
               </div>
@@ -1151,7 +1151,7 @@ export const PlaylistManagerView: React.FC<PlaylistManagerViewProps> = ({
                       </div>
 
                       <div className="text-[11px] font-medium text-white/80">
-                        {item.category} · <span className="font-mono-tabular">{activeDevice.resolution}</span>
+                        {item.category === '动态时钟' ? '时钟' : item.category} · <span className="font-mono-tabular">{activeDevice.resolution}</span>
                       </div>
                     </div>
                   </button>

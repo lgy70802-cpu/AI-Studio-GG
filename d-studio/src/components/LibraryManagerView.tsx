@@ -97,6 +97,11 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
   onNotify,
 }) => {
   const [sizeFilter, setSizeFilter] = useState<'exact' | 'direction' | 'all'>('exact');
+  const nextSizeFilter = {
+    exact: { mode: 'direction' as const, label: '显示同向' },
+    direction: { mode: 'all' as const, label: '显示全部' },
+    all: { mode: 'exact' as const, label: '显示当前' },
+  }[sizeFilter];
   const [sourceFilter, setSourceFilter] = useState<'all' | ThemeSource>(() => readPreferences().sourceFilter ?? 'all');
   const [onlyFavs, setOnlyFavs] = useState(() => Boolean(readPreferences().onlyFavs));
   const [librarySort, setLibrarySort] = useState<'frequent' | 'newest-added' | 'most-used'>(() => readPreferences().librarySort ?? 'frequent');
@@ -420,7 +425,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
                       : 'text-[#6B6880] hover:text-[#1A172B]'
                   }`}
                 >
-                  {cat}
+                  {cat === '动态时钟' ? '时钟' : cat}
                 </button>
               ))}
             </div>
@@ -473,10 +478,10 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
               <Star className="h-3.5 w-3.5" fill={onlyFavs ? 'currentColor' : 'none'} />
               <span>仅看收藏</span>
             </button>
-            <button type="button" aria-label={sizeFilter === 'exact' ? '显示同向' : sizeFilter === 'direction' ? '显示全部' : '显示当前'} onClick={() => setSizeFilter(value => value === 'exact' ? 'direction' : value === 'direction' ? 'all' : 'exact')}
+            <button type="button" aria-label={nextSizeFilter.label} onClick={() => setSizeFilter(nextSizeFilter.mode)}
               title="依次切换当前尺寸、同向素材和全部尺寸"
               className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold transition-colors ${sizeFilter !== 'exact' ? 'bg-[#EFEBFD] text-[#5E45F8]' : 'bg-[#F5F4FA] text-[#6B6880] hover:bg-[#EFEBFD]'}`}>
-              {sizeFilter === 'exact' ? '显示同向' : sizeFilter === 'direction' ? '显示全部' : '显示当前'}
+              {nextSizeFilter.label}
             </button>
           </div>
         </div>
@@ -592,7 +597,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
           <p className="mt-1 max-w-md text-[13px] text-[#7A7690]">
             {hasFilters
               ? '你可以重置筛选条件查看全部已入库内容，或者导入新的本地图片素材。'
-              : sizeFilter !== 'all' && libraryItems.length > 0 ? '可切换“显示同向”或“显示全部”，查看其他尺寸的素材并进入编辑器适配。' : '支持拖拽或点击导入电脑里的壁纸图片，也可以前往在线资源广场下载官方动态时钟与主题。'}
+              : sizeFilter !== 'all' && libraryItems.length > 0 ? '可切换“显示同向”或“显示全部”，查看其他尺寸的素材并进入编辑器适配。' : '支持拖拽或点击导入电脑里的壁纸图片，也可以前往在线资源广场下载官方时钟与主题。'}
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
             {hasFilters && (
@@ -677,7 +682,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
                     </span>
                   </div>
                   <div className="text-[11px] text-white/85">
-                    {SOURCE_LABELS[item.source ?? 'official']} · {item.category}
+                    {SOURCE_LABELS[item.source ?? 'official']} · {item.category === '动态时钟' ? '时钟' : item.category}
                   </div>
                 </div>
               </button>
@@ -747,7 +752,7 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-[#7A7690]">
                   <span>{SOURCE_LABELS[livePreviewItem.source ?? 'official']}</span>
                   <span aria-hidden="true">·</span>
-                  <span>{livePreviewItem.category}</span>
+                  <span>{livePreviewItem.category === '动态时钟' ? '时钟' : livePreviewItem.category}</span>
                   <span aria-hidden="true">·</span>
                   <span>作者：{livePreviewItem.author}</span>
                   <span aria-hidden="true">·</span>

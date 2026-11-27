@@ -1,4 +1,4 @@
-import { desktopMode, scanDevices, outputImage, configureDevice, selectDesktopDevice, loadLibrary, saveLibrary, playlistCommand, readViewedPlaylists, applyMedia, devicePower, previewTheme as previewDesktopTheme, endThemePreview, enableSchedules, runSchedule, resetSchedule, ScheduleRuntime, OrientationUse } from './services/desktopBridge';
+import { desktopMode, refreshCurrentMedia, scanDevices, outputImage, configureDevice, selectDesktopDevice, loadLibrary, saveLibrary, playlistCommand, readViewedPlaylists, applyMedia, devicePower, previewTheme as previewDesktopTheme, endThemePreview, enableSchedules, runSchedule, resetSchedule, ScheduleRuntime, OrientationUse } from './services/desktopBridge';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   ChevronLeft,
@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   X,
   CheckCircle2,
-  Layers,
   RotateCcw,
 } from 'lucide-react';
 import {
@@ -97,8 +96,10 @@ export default function App() {
   const [editorSession, setEditorSession] = useState<{
     project: EditorThemeProject;
     sourceThemeId?: string;
+    sessionId?: string;
   } | null>(null);
   const editorReturnNav = useRef<NavSection>('creator');
+  const editorOutputTarget = useRef<{ serial: string; themeId: string; portrait: boolean } | null>(null);
   const [editorSidebarMode, setEditorSidebarMode] = useState<SidebarMode>('hidden');
   const [tempPreview, setTempPreview] = useState<{
     scopeKey: string;
@@ -526,7 +527,8 @@ export default function App() {
     (id: string, nextName: string) => {
       setThemes((prev) =>
         prev.map((t) =>
-          t.id === id ? { ...t, displayName: nextName, name: nextName } : t
+          t.id === id ? { ...t, displayName: nextName, name: nextName,
+            editorProject: t.editorProject ? { ...t.editorProject, name: nextName, updated_at: Date.now() } : undefined } : t
         )
       );
       notify(`已将素材重命名为「${nextName}」`);
@@ -1065,6 +1067,8 @@ export default function App() {
 
   const handleSaveEditorTheme = useCallback(
     (savedTheme: ThemeItem, applyNow: boolean) => {
+      const sessionId = editorSession?.sessionId;
+      const outputTarget = editorOutputTarget.current;
         if (desktopMode) {
           return (async () => {
             await saveChain.current;
@@ -1074,14 +1078,22 @@ export default function App() {
             const stored = await saveLibrary({ themes: nextThemes, playlists, schedules });
             setThemes(stored);
             const item = stored.find(t => t.id === savedTheme.id)!;
-            setEditorSession(curr => curr && item.editorProject ? { project: item.editorProject, sourceThemeId: item.id } : curr);
+            setEditorSession(curr => curr && curr.sessionId === sessionId && item.editorProject ? { ...curr, project: item.editorProject, sourceThemeId: item.id } : curr);
             if (applyNow) {
               if (!activeDevice.serial) throw new Error('主题已保存，请连接并选择 MiraBox 后再应用。');
               await applyMedia(activeDevice.serial, item.id);
               setTempPreview(null);
               await refreshDesktop();
               notify(`已保存「${item.displayName}」并输出至 ${activeDevice.name}`);
-            } else notify(`已保存「${item.displayName}」到我的资源库`);
+            } else {
+              const target = outputTarget;
+              if (target) {
+                const refreshed = await refreshCurrentMedia(target.serial, item.id, target.portrait, target.themeId);
+                if (refreshed && editorOutputTarget.current === target) editorOutputTarget.current = { ...target, themeId: item.id };
+                await refreshDesktop();
+                notify(refreshed ? `已保存「${item.displayName}」并更新当前画面` : `已保存「${item.displayName}」到我的资源库`);
+              } else notify(`已保存「${item.displayName}」到我的资源库`);
+            }
             return true;
           })().catch(error => { notify(error.message); return false; });
         }
@@ -1095,8 +1107,8 @@ export default function App() {
         return [savedTheme, ...prev];
       });
       setEditorSession((curr) =>
-        curr && savedTheme.editorProject
-          ? { project: savedTheme.editorProject, sourceThemeId: savedTheme.id }
+        curr && curr.sessionId === sessionId && savedTheme.editorProject
+          ? { ...curr, project: savedTheme.editorProject, sourceThemeId: savedTheme.id }
           : curr
       );
       if (applyNow) {
@@ -1108,7 +1120,7 @@ export default function App() {
         notify(`已保存「${savedTheme.displayName}」到我的资源库（当前设备输出未改变）`);
       }
     },
-      [activeDevice.name, activeDevice.serial, applyThemeInScope, currentScopeKey, notify, themes, playlists, schedules, refreshDesktop]
+      [activeDevice.name, activeDevice.serial, applyThemeInScope, currentScopeKey, notify, themes, playlists, schedules, refreshDesktop, editorSession?.sessionId]
   );
 
   const handleStartTempPreview = useCallback(
@@ -1221,13 +1233,15 @@ export default function App() {
   const handleEditInStudio = useCallback(
     (theme: ThemeItem) => {
       editorReturnNav.current = activeNav;
+      editorOutputTarget.current = activeNav === 'home' && activeDevice.serial && activeDevice.themeId === theme.id
+        ? { serial: activeDevice.serial, themeId: theme.id, portrait: activeDevice.orientation === 'portrait' } : null;
       const source = themes.find(item => item.id === theme.id);
       if (theme.desktopStatic && !source) {
         notify('找不到当前内容的源工程，请从资源库选择素材后编辑。');
         return;
       }
       const proj = ensureEditorProjectFromTheme(source ?? theme, activeDevice);
-      setEditorSession({ project: proj, sourceThemeId: theme.id });
+      setEditorSession({ project: proj, sourceThemeId: theme.id, sessionId: crypto.randomUUID() });
       setActiveNav('creator');
     },
     [activeDevice, activeNav, themes, notify]
@@ -1664,10 +1678,7 @@ export default function App() {
             <div className="relative z-10 flex w-64 flex-col bg-white p-5 shadow-2xl">
               <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#5E45F8] text-white">
-                    <Layers className="h-4 w-4" />
-                  </div>
-                  <span className="text-[18px] font-extrabold text-[#1A172B]">D Studio</span>
+                  <img src="/pixbuddy-wordmark.png" alt="PIXBUDDY" className="h-10 w-44 object-contain" />
                 </div>
                 <button
                   type="button"
@@ -1868,7 +1879,8 @@ export default function App() {
                 onChangeEditorSidebarMode={setEditorSidebarMode}
                 onEnterEditor={(proj, srcId) => {
                   editorReturnNav.current = activeNav;
-                  setEditorSession({ project: proj, sourceThemeId: srcId });
+                  editorOutputTarget.current = null;
+                  setEditorSession({ project: proj, sourceThemeId: srcId, sessionId: crypto.randomUUID() });
                 }}
                 onExitEditor={() => {
                   setEditorSession(null);
@@ -1977,7 +1989,7 @@ export default function App() {
                     <>
                       <span aria-hidden="true">·</span>
                       <span className="whitespace-nowrap">
-                        {isPlaying ? '实时输出中' : '已暂停'}
+                        {activeDevice.status === '离线' ? '设备已离线 · 等待重新连接' : isPlaying ? '实时输出中' : '已暂停'}
                       </span>
                     </>
                   )}

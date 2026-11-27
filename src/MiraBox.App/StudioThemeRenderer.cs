@@ -26,8 +26,12 @@ internal sealed class StudioThemeRenderer : IDisposable
     CoreWebView2DevToolsProtocolEventReceiver? screencast;
     readonly Dispatcher encoder;
     readonly Thread encoderThread;
+    readonly int targetWidth;
+    readonly int targetHeight;
     public StudioThemeRenderer(int width, int height)
     {
+        targetWidth = width;
+        targetHeight = height;
         var started = new TaskCompletionSource<Dispatcher>(TaskCreationOptions.RunContinuationsAsynchronously);
         encoderThread = new Thread(() => { started.SetResult(Dispatcher.CurrentDispatcher); Dispatcher.Run(); }) { IsBackground = true, Name = "MiraBox theme JPEG" };
         encoderThread.SetApartmentState(ApartmentState.STA); encoderThread.Start(); encoder = started.Task.GetAwaiter().GetResult();
@@ -60,6 +64,11 @@ internal sealed class StudioThemeRenderer : IDisposable
         };
         view.Source = new Uri("https://studio.local/index.html?device-render=1");
         await loaded.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+        await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setDeviceMetricsOverride", JsonSerializer.Serialize(new
+        {
+            width = targetWidth, height = targetHeight, deviceScaleFactor = 1, mobile = false,
+            screenWidth = targetWidth, screenHeight = targetHeight
+        })).WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
         view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { command = "render-theme", token, theme, portrait, layoutIndex }));
         await ready.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         try
@@ -91,11 +100,31 @@ internal sealed class StudioThemeRenderer : IDisposable
         if (System.Diagnostics.Stopwatch.GetElapsedTime(heartbeat).TotalSeconds > 8) throw new IOException("主题渲染心跳中断，正在重建画布。");
         using var stream = new MemoryStream();
         if (latestFrame is { } bytes && System.Diagnostics.Stopwatch.GetElapsedTime(lastFrameAt).TotalSeconds < 2) stream.Write(bytes);
-        else await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, stream).WaitAsync(TimeSpan.FromSeconds(3));
+        else await CaptureTargetFrame(stream);
         stream.Position = 0;
         var frame = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        if (frame.PixelWidth != targetWidth || frame.PixelHeight != targetHeight)
+        {
+            stream.SetLength(0);
+            await CaptureTargetFrame(stream);
+            stream.Position = 0;
+            frame = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            if (frame.PixelWidth != targetWidth || frame.PixelHeight != targetHeight)
+                throw new IOException("主题渲染尺寸与设备分辨率不一致。");
+        }
         frame.Freeze();
         return frame;
+    }
+    async Task CaptureTargetFrame(Stream stream)
+    {
+        var response = await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Page.captureScreenshot", JsonSerializer.Serialize(new
+        {
+            format = "jpeg", quality = 85, captureBeyondViewport = true,
+            clip = new { x = 0, y = 0, width = targetWidth, height = targetHeight, scale = 1 }
+        })).WaitAsync(TimeSpan.FromSeconds(3));
+        using var result = JsonDocument.Parse(response);
+        var bytes = Convert.FromBase64String(result.RootElement.GetProperty("data").GetString()!);
+        await stream.WriteAsync(bytes);
     }
     public Task SetPaused(bool paused)
     {

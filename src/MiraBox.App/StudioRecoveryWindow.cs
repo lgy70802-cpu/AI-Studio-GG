@@ -10,7 +10,7 @@ internal sealed class StudioRecoveryWindow : Window
 {
     public StudioRecoveryWindow(string root, string reason)
     {
-        Title = "MiraBox Studio · 数据恢复"; Width = 660; Height = 400; WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        Title = "小屏宝PixBuddy · 数据恢复"; Width = 660; Height = 400; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = "原数据已保留，请选择完整备份包恢复。", FontSize = 20, Margin = new Thickness(0, 0, 0, 16) });
         var status = new TextBlock { Text = reason, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 16) };

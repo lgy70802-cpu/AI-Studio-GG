@@ -214,7 +214,7 @@ export const PluginWidgetCard: React.FC<PluginWidgetCardProps> = ({
         {config.showTrackName !== false && (
           <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-white/85">
             <Music2 className="h-3 w-3 shrink-0" style={{ color: accent }} />
-            <span className="max-w-[130px] truncate">Midnight Lo-Fi · D Studio</span>
+            <span className="max-w-[130px] truncate">Midnight Lo-Fi · 小屏宝PixBuddy</span>
           </div>
         )}
         <div className={`flex items-end gap-[2.5px] ${compact ? 'h-4' : 'h-6'}`}>

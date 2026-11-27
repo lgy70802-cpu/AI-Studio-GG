@@ -325,9 +325,9 @@ export const PluginCenterView: React.FC<PluginCenterViewProps> = ({
         {/* Live Proportional Output Preview */}
         <div className="relative z-10 mt-5 flex justify-center">
           <div
-            style={{ aspectRatio: previewAspectRatio }}
+            style={{ aspectRatio: previewAspectRatio, width: isPortrait ? undefined : `${Math.min(1, (activeDevice.nativeWidth / activeDevice.nativeHeight) / (1920 / 462)) * 100}%` }}
             className={`relative overflow-hidden rounded-[20px] border border-white/20 bg-black/40 shadow-[0_22px_48px_rgba(6,2,20,0.55)] transition-all duration-300 ${
-              isPortrait ? 'w-[216px] sm:w-[236px] max-w-full' : 'w-full'
+              isPortrait ? 'w-[216px] sm:w-[236px] max-w-full' : ''
             }`}
           >
             <ThemeArtwork
@@ -461,7 +461,7 @@ export const PluginCenterView: React.FC<PluginCenterViewProps> = ({
         <div className="rounded-[24px] border border-dashed border-[#DAD6F0] bg-white/85 py-14 text-center">
           <p className="text-[14px] font-bold text-[#1A172B]">没有找到符合条件的插件</p>
           <p className="mt-1 text-[12.5px] text-[#7A7690]">
-            可以重置状态与分类筛选条件，浏览全部 D Studio 扩展挂件
+            可以重置状态与分类筛选条件，浏览全部 小屏宝PixBuddy 扩展挂件
           </p>
           <button
             type="button"

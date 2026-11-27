@@ -195,7 +195,7 @@ export const LandscapePosterCard: React.FC<LandscapePosterCardProps> = ({
         {/* Bottom Row: Unboxed Metadata + "当前正在输出" / "应用到 D92 实机" */}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 truncate text-[11px] font-medium text-white/80">
-            {item.category} · <span className="font-mono-tabular">{activeDevice.resolution}</span>
+            {item.category === '动态时钟' ? '时钟' : item.category} · <span className="font-mono-tabular">{activeDevice.resolution}</span>
             {subtitleExtra ? ` · ${subtitleExtra}` : ''}
           </div>
 
@@ -208,7 +208,7 @@ export const LandscapePosterCard: React.FC<LandscapePosterCardProps> = ({
                 : 'bg-white/95 text-[#1A172B] hover:bg-white'
             }`}
           >
-            {isCurrent ? '当前正在输出' : `应用到 ${deviceShortName}`}
+            {isCurrent ? '当前内容' : `应用到 ${deviceShortName}`}
           </button>
         </div>
       </div>

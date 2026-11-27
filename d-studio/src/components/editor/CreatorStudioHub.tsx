@@ -26,7 +26,7 @@ import { DeviceInfo, ThemeItem } from '../../data/themes';
 import {
   BUILTIN_TEMPLATES,
   BuiltinTemplateSpec,
-  EDITOR_DEVICE_SPECS,
+  availableEditorSpecs,
   createBlankEditorProject,
   ensureEditorProjectFromTheme,
   genEditorId,
@@ -40,6 +40,7 @@ interface CreatorStudioHubProps {
   themes: ThemeItem[];
   activeTheme: ThemeItem;
   activeDevice: DeviceInfo;
+  devices: DeviceInfo[];
   onEnterEditor: (project: EditorThemeProject, sourceThemeId?: string) => void;
   onApplyTheme: (theme: ThemeItem) => void;
   onDeleteCustomTheme: (id: string) => void;
@@ -60,12 +61,15 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
   themes,
   activeTheme,
   activeDevice,
+  devices,
   onEnterEditor,
   onApplyTheme,
   onDeleteCustomTheme,
   onDuplicateCustomTheme,
   onNotify,
 }) => {
+  const availableSpecs = availableEditorSpecs(devices);
+  const specKey = availableSpecs.map(spec => spec.id).join();
   const [selectedSpecId, setSelectedSpecId] = useState<string>(
     activeDevice.orientation === 'portrait'
       ? activeDevice.nativeWidth === 1280
@@ -75,6 +79,11 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
         ? 'd69-land'
         : 'd92-land'
   );
+  useEffect(() => {
+    const preferred = availableSpecs.find(spec => spec.deviceModel.startsWith(activeDevice.model) &&
+      (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')) ?? availableSpecs[0];
+    setSelectedSpecId(preferred.id);
+  }, [activeDevice.id, activeDevice.orientation, specKey]);
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
   const [heroMenuOpen, setHeroMenuOpen] = useState(false);
   const [previewBuiltin, setPreviewBuiltin] = useState<BuiltinTemplateSpec | null>(null);
@@ -99,7 +108,9 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
   const heroMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedSpec =
-    EDITOR_DEVICE_SPECS.find((s) => s.id === selectedSpecId) ?? EDITOR_DEVICE_SPECS[0];
+    availableSpecs.find((s) => s.id === selectedSpecId) ?? availableSpecs[0];
+  const previewWidth = selectedSpec.id.startsWith('d69') ? 1280 : 1920;
+  const previewHeight = selectedSpec.id.startsWith('d69') ? 480 : 462;
 
   const customThemes = useMemo(
     () => themes.filter((t) => t.source === 'custom' || Boolean(t.editorProject)),
@@ -365,7 +376,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
             <Monitor className="h-3.5 w-3.5 text-[#A78BFA]" />
             画布规格
           </span>
-          {EDITOR_DEVICE_SPECS.map((spec) => {
+          {availableSpecs.map((spec) => {
             const active = spec.id === selectedSpecId;
             return (
               <button
@@ -462,7 +473,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                       : 'text-[#6B6880] hover:text-[#1A172B]'
                   }`}
                 >
-                  {cat}
+                  {cat === '动态时钟' ? '时钟' : cat}
                 </button>
               ))}
             </div>
@@ -734,7 +745,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                         )}
                       </div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6880]">
-                        <span>{item.category}</span>
+                        <span>{item.category === '动态时钟' ? '时钟' : item.category}</span>
                         <span>·</span>
                         <span className="font-mono-tabular">{item.resolution}</span>
                         {item.editorProject && (
@@ -835,16 +846,16 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
             <div className="aurora-dark-card grid grid-cols-1 gap-4 p-5 md:grid-cols-[1fr_140px]">
               <div>
                 <div className="mb-1.5 text-[11px] font-semibold text-[#C9C1EA]">
-                  横屏带鱼副屏 · <span className="font-mono-tabular">1920 × 462</span>
+                  横屏副屏 · <span className="font-mono-tabular">{previewWidth} × {previewHeight}</span>
                 </div>
-                <div className="aspect-[1920/462] overflow-hidden rounded-xl border border-white/15 bg-black/30 shadow-lg">
+                <div style={{ aspectRatio: `${previewWidth} / ${previewHeight}` }} className=" overflow-hidden rounded-xl border border-white/15 bg-black/30 shadow-lg">
                   <ThemeArtwork
                     theme={{
                       id: `${previewBuiltin.id}-land`,
                       name: previewBuiltin.name,
                       displayName: previewBuiltin.name,
                       category: previewBuiltin.category,
-                      resolution: '1920×462',
+                      resolution: `${previewWidth}×${previewHeight}`,
                       orientation: 'landscape',
                       author: '官方内置',
                       downloads: '内置',
@@ -860,7 +871,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                       isFavorite: false,
                       accentHex: previewBuiltin.accentHex,
                       editorProject: createBlankEditorProject(
-                        { ...activeDevice, orientation: 'landscape', nativeWidth: 1920, nativeHeight: 462 },
+                        { ...activeDevice, orientation: 'landscape', nativeWidth: previewWidth, nativeHeight: previewHeight },
                         { name: previewBuiltin.name, template: previewBuiltin }
                       ),
                     }}
@@ -873,16 +884,16 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
               </div>
               <div>
                 <div className="mb-1.5 text-[11px] font-semibold text-[#C9C1EA]">
-                  竖屏副屏 · <span className="font-mono-tabular">462 × 1920</span>
+                  竖屏副屏 · <span className="font-mono-tabular">{previewHeight} × {previewWidth}</span>
                 </div>
-                <div className="mx-auto aspect-[462/1920] h-44 overflow-hidden rounded-xl border border-white/15 bg-black/30 shadow-lg">
+                <div style={{ aspectRatio: `${previewHeight} / ${previewWidth}` }} className="mx-auto h-44 overflow-hidden rounded-xl border border-white/15 bg-black/30 shadow-lg">
                   <ThemeArtwork
                     theme={{
                       id: `${previewBuiltin.id}-port`,
                       name: previewBuiltin.name,
                       displayName: previewBuiltin.name,
                       category: previewBuiltin.category,
-                      resolution: '462×1920',
+                      resolution: `${previewHeight}×${previewWidth}`,
                       orientation: 'portrait',
                       author: '官方内置',
                       downloads: '内置',
@@ -898,7 +909,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                       isFavorite: false,
                       accentHex: previewBuiltin.accentHex,
                       editorProject: createBlankEditorProject(
-                        { ...activeDevice, orientation: 'portrait', nativeWidth: 1920, nativeHeight: 462 },
+                        { ...activeDevice, orientation: 'portrait', nativeWidth: previewWidth, nativeHeight: previewHeight },
                         { name: previewBuiltin.name, template: previewBuiltin }
                       ),
                     }}

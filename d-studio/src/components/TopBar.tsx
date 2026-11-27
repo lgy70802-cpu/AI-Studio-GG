@@ -167,7 +167,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="搜索壁纸、动态时钟、主题名称..."
+            placeholder="搜索壁纸、时钟、主题名称..."
             aria-label="搜索主题与壁纸"
             className="w-full bg-transparent px-3 py-1.5 text-[13px] text-[#1A172B] placeholder:text-[#9A96AE] focus:outline-none"
           />
@@ -203,7 +203,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       : 'bg-[#F5F4FA] text-[#56526B] hover:bg-[#EBE8FA]'
                   }`}
                 >
-                  {cat}
+                  {cat === '动态时钟' ? '时钟' : cat}
                 </button>
               ))}
             </div>

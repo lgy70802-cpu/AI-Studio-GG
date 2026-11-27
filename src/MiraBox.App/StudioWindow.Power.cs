@@ -51,7 +51,7 @@ public sealed partial class StudioWindow
     object DesktopPreferences()
     {
         using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        return new { autoStart = key?.GetValue("MiraBoxStudio.Next") is string,
+        return new { closeToTray, autoStart = key?.GetValue("MiraBoxStudio.Next") is string,
             hardwareBrightness = false, hardwarePower = false, note = "亮度为软件像素调暗；待机发送黑帧，不控制背光。" };
     }
 }

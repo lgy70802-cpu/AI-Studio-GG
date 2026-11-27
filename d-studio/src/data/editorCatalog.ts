@@ -46,6 +46,13 @@ export const EDITOR_DEVICE_SPECS: DeviceSpecOption[] = [
   { id: 'd69-port', label: 'D69 竖屏', deviceModel: 'D69 Studio', size: [480, 1280] },
 ];
 
+export function availableEditorSpecs(devices: DeviceInfo[]): DeviceSpecOption[] {
+  const onlineModels = new Set(devices.filter(device => device.status === '已连接').map(device => device.model));
+  return onlineModels.size === 0 ? EDITOR_DEVICE_SPECS : EDITOR_DEVICE_SPECS.filter(spec =>
+    [...onlineModels].some(model => spec.deviceModel.startsWith(model))
+  );
+}
+
 export function specLabelFromSize(size: [number, number]): string {
   const found = EDITOR_DEVICE_SPECS.find(
     (s) => s.size[0] === size[0] && s.size[1] === size[1]
@@ -1827,7 +1834,7 @@ export function ensureEditorProjectFromTheme(
   device: DeviceInfo
 ): EditorThemeProject {
   if (theme.editorProject) {
-    return structuredClone(theme.editorProject);
+    return { ...structuredClone(theme.editorProject), name: theme.displayName };
   }
   const base = createBlankEditorProject(device, {
     name: theme.displayName,

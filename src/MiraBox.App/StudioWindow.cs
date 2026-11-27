@@ -49,9 +49,11 @@ public sealed partial class StudioWindow : Window
         StudioAtomicFile.Recover(Path.Combine(dataRoot, "schedule-state.json"), n => n?["History"] is System.Text.Json.Nodes.JsonArray && n?["Completed"] is System.Text.Json.Nodes.JsonArray);
         library = new StudioLibraryStore(dataRoot);
         Load();
+        LoadWindowPreferences();
         LoadSchedules();
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnSystemPower;
-        Title = "MiraBox Studio";
+        Title = "小屏宝PixBuddy";
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/PixBuddy.ico"));
         Width = 1440; Height = 940; MinWidth = 720; MinHeight = 640;
         InitializeWindowFrame();
         Loaded += async (_, _) =>
@@ -94,6 +96,7 @@ public sealed partial class StudioWindow : Window
         Closing += async (_, e) =>
         {
             if (closed) return;
+            if (closeToTray && !exitRequested) { e.Cancel = true; HideToTray(); return; }
             e.Cancel = true;
             if (closing) return;
 
@@ -115,6 +118,7 @@ public sealed partial class StudioWindow : Window
                 foreach (var upload in videoUploads.Values) { upload.Stream.Dispose(); if (File.Exists(upload.Path)) File.Delete(upload.Path); }
                 videoUploads.Clear();
                 if (inspectedPackage != null) { Directory.Delete(inspectedPackage.Directory, true); inspectedPackage = null; }
+                trayIcon?.Dispose();
                 browser.Dispose();
                 closed = true;
             }
@@ -308,6 +312,26 @@ public sealed partial class StudioWindow : Window
         if (!Uri.TryCreate(args.Source, UriKind.Absolute, out var origin) || origin.Host != "studio.local") return;
         using (var control = JsonDocument.Parse(args.WebMessageAsJson))
         {
+            if (control.RootElement.TryGetProperty("command", out var capture) && capture.GetString() is "capture-shot" or "capture-record")
+            {
+                var captureId = control.RootElement.GetProperty("id").GetString();
+                try { Reply(new { id = captureId, result = await CaptureDesktop(control.RootElement) }); }
+                catch (Exception ex) { Reply(new { id = captureId, error = ex.Message }); }
+                return;
+            }
+            if (control.RootElement.TryGetProperty("command", out var update) && update.GetString()?.StartsWith("updates-", StringComparison.Ordinal) == true)
+            {
+                var updateId = control.RootElement.GetProperty("id").GetString();
+                try { Reply(new { id = updateId, result = await UpdateCommand(update.GetString()!, control.RootElement) }); }
+                catch (Exception ex) { Reply(new { id = updateId, error = ex is OperationCanceledException ? "更新操作已取消或超时，请重试。" : ex.Message }); }
+                return;
+            }
+            if (control.RootElement.TryGetProperty("command", out var diagnostic) && diagnostic.GetString() == "debug-window-state" &&
+                Environment.GetEnvironmentVariable("MIRABOX_DEVTOOLS_PORT") != null)
+            {
+                Reply(new { id = control.RootElement.GetProperty("id").GetString(), result = WindowDiagnostics() });
+                return;
+            }
             if (control.RootElement.TryGetProperty("command", out var kind) && kind.GetString() == "window-control")
             {
                 switch (control.RootElement.GetProperty("action").GetString())
@@ -340,6 +364,19 @@ public sealed partial class StudioWindow : Window
             else if (command == "device-power")
             {
                 await PowerCommand(message.GetProperty("serial").GetString()!, message); result = true;
+            }
+            else if (command == "window-preferences")
+            {
+                closeToTray = message.GetProperty("enabled").GetBoolean();
+                SaveWindowPreferences(); result = DesktopPreferences();
+            }
+            else if (command == "device-rename")
+            {
+                var serial = message.GetProperty("serial").GetString()!;
+                if (!saved.ContainsKey(serial)) throw new InvalidOperationException("设备不存在");
+                var name = message.GetProperty("name").GetString()?.Trim() ?? "";
+                if (name.Length > 40) throw new InvalidOperationException("设备名称最多40个字符");
+                deviceNames[serial] = name; SaveWindowPreferences(); result = true;
             }
             else if (command == "desktop-preferences") result = DesktopPreferences();
             else if (command == "desktop-autostart")
@@ -400,6 +437,28 @@ public sealed partial class StudioWindow : Window
                 Save();
                 result = true;
             }
+            else if (command == "refresh-current-media")
+            {
+                var serial = message.GetProperty("serial").GetString()!;
+                var themeId = message.GetProperty("themeId").GetString()!;
+                var portrait = message.GetProperty("portrait").GetBoolean();
+                var sourceThemeId = message.TryGetProperty("sourceThemeId", out var source) ? source.GetString() : themeId;
+                if (!saved.TryGetValue(serial, out var current) || current.ThemeId != sourceThemeId || current.Portrait != portrait)
+                    result = false;
+                else
+                {
+                    var next = PreparePlaylistImage(current, themeId, true) with { Playing = current.Playing };
+                    InvalidatePlaylistWork(serial);
+                    if (connectedSerials.Contains(serial))
+                    {
+                        await Start(next);
+                        if (!next.Playing) await Stop(serial);
+                    }
+                    saved[serial] = next;
+                    Save();
+                    result = true;
+                }
+            }
             else if (command == "library-load")
             {
                 librarySnapshot = library.Load();
@@ -431,7 +490,7 @@ public sealed partial class StudioWindow : Window
                     var width = d.Model == "D69" ? 1280 : 1920;
                     var height = d.Model == "D69" ? 480 : 462;
                     var preview = PreviewData(d);
-                    return new { id = d.Serial, serial = d.Serial, name = d.Model + " · " + d.Serial, model = d.Model,
+                    return new { id = d.Serial, serial = d.Serial, name = deviceNames.TryGetValue(d.Serial, out var alias) && !string.IsNullOrWhiteSpace(alias) ? alias : d.Model, model = d.Model,
                         status = online ? "已连接" : "离线", nativeWidth = width, nativeHeight = height,
                         resolution = d.Portrait ? height + " × " + width : width + " × " + height,
                         refreshRate = "—", brightness = d.Brightness, orientation = d.Portrait ? "portrait" : "landscape",

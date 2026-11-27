@@ -36,6 +36,7 @@ public sealed partial class StudioWindow
         SourceInitialized += (_, _) =>
         {
             var handle = new WindowInteropHelper(this).Handle;
+            HwndSource.FromHwnd(handle)?.AddHook(WindowMessages);
             var area = System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;
             if (GetWindowRect(handle, out var bounds))
             {
@@ -75,6 +76,41 @@ public sealed partial class StudioWindow
             bounds.Bottom - bounds.Top + 1, diameter, diameter);
         if (region != IntPtr.Zero && SetWindowRgn(handle, region, true) == 0) DeleteObject(region);
     }
+
+    object WindowDiagnostics()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        GetWindowRect(handle, out var bounds);
+        var screen = System.Windows.Forms.Screen.FromHandle(handle);
+        var area = screen.WorkingArea;
+        return new
+        {
+            state = WindowState.ToString(), dpi = GetDpiForWindow(handle),
+            bounds = new { left = bounds.Left, top = bounds.Top, right = bounds.Right, bottom = bounds.Bottom },
+            workArea = new { left = area.Left, top = area.Top, right = area.Right, bottom = area.Bottom },
+            monitors = System.Windows.Forms.Screen.AllScreens.Length
+        };
+    }
+
+    IntPtr WindowMessages(IntPtr handle, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != 0x0024) return IntPtr.Zero;
+        var screen = System.Windows.Forms.Screen.FromHandle(handle);
+        var area = screen.WorkingArea;
+        var info = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+        info.MaxPosition = new NativePoint { X = area.Left - screen.Bounds.Left, Y = area.Top - screen.Bounds.Top };
+        info.MaxSize = new NativePoint { X = area.Width, Y = area.Height };
+        var scale = GetDpiForWindow(handle) / 96.0;
+        info.MinTrackSize = new NativePoint { X = (int)Math.Ceiling(MinWidth * scale), Y = (int)Math.Ceiling(MinHeight * scale) };
+        Marshal.StructureToPtr(info, lParam, false);
+        handled = true;
+        return IntPtr.Zero;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct MinMaxInfo { public NativePoint Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
 
     [StructLayout(LayoutKind.Sequential)]
     struct WindowBounds { public int Left, Top, Right, Bottom; }

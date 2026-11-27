@@ -1,3 +1,4 @@
+import { captureDesktopImage, captureDesktopVideo, desktopMode } from '../../services/desktopBridge';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, Video, X } from 'lucide-react';
 import { EDITOR_DEVICE_SPECS } from '../../data/editorCatalog';
@@ -40,6 +41,19 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
   onCapturedVideo,
   onNotify,
 }) => {
+  const nativeStarted = useRef(false);
+  useEffect(() => {
+    if (!mode) { nativeStarted.current = false; return; }
+    if (!desktopMode || nativeStarted.current) return;
+    nativeStarted.current = true;
+    const action = mode === 'shot'
+      ? captureDesktopImage(defaultSize[0], defaultSize[1]).then(result => { if (!result.cancelled) onCapturedImage(result); })
+      : captureDesktopVideo(defaultSize[0], defaultSize[1]).then(result => { if (!result.cancelled) onCapturedVideo(result); });
+    action.then(() => {
+
+      onClose();
+    }).catch(error => { onNotify(error.message); onClose(); });
+  }, [mode, defaultSize, onCapturedImage, onCapturedVideo, onClose, onNotify]);
   const [specIdx, setSpecIdx] = useState<number>(() => {
     const idx = EDITOR_DEVICE_SPECS.findIndex(
       (s) => s.size[0] === defaultSize[0] && s.size[1] === defaultSize[1]
@@ -438,7 +452,7 @@ export const CaptureModal: React.FC<CaptureModalProps> = ({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [mode, phase, stopRecording, onClose, handleConfirm]);
 
-  if (!mode) return null;
+  if (!mode || desktopMode) return null;
 
   const toDeskCoords = (clientX: number, clientY: number) => ({
     x: (clientX - viewport.ox) / viewport.scale,

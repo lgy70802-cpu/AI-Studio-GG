@@ -14,7 +14,7 @@ internal sealed class StudioPackageStore(string root, string webRoot)
     static readonly string[] StateNames = ["desktop-state.json", "schedule-state.json"];
     static readonly string[] TransactionNames = StateNames.Prepend("library-workspace.json")
         .SelectMany(name => new[] { name, name + ".previous" }).ToArray();
-    public void Export(string path, JsonObject snapshot, JsonObject preferences, string? themeId = null)
+    public void Export(string path, JsonObject snapshot, JsonObject preferences, string? themeId = null, Action<int, int>? progress = null)
     {
         var state = snapshot.DeepClone().AsObject();
         if (themeId != null)
@@ -51,6 +51,14 @@ internal sealed class StudioPackageStore(string root, string webRoot)
                 }
             else if (node is JsonArray array) foreach (var child in array) Collect(child);
         }
+        preferences = preferences.DeepClone().AsObject();
+        if (themeId == null && preferences["d92-te-custom-assets-v1"] is JsonValue savedAssets)
+        {
+            var assets = JsonNode.Parse(savedAssets.GetValue<string>());
+            if (assets is not JsonArray) throw new InvalidDataException("自定义素材预设格式无效。");
+            Collect(assets);
+            preferences["d92-te-custom-assets-v1"] = assets.ToJsonString();
+        }
         Collect(state);
         if (themeId == null)
         {
@@ -85,6 +93,7 @@ internal sealed class StudioPackageStore(string root, string webRoot)
         {
             using (var archive = ZipFile.Open(path + ".tmp", ZipArchiveMode.Create))
             {
+                var completed = 0;
                 foreach (var (name, asset) in files)
                 {
                     using var stream = archive.CreateEntry(name, CompressionLevel.Fastest).Open();
@@ -96,6 +105,7 @@ internal sealed class StudioPackageStore(string root, string webRoot)
                         while ((read = source.Read(buffer)) > 0) { stream.Write(buffer, 0, read); hash.AppendData(buffer, 0, read); total += read; }
                         if (total != asset.Length || Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant() != asset.Hash) throw new IOException("打包期间素材发生变化，请重试。");
                     }
+                    progress?.Invoke(++completed, files.Count);
                 }
                 using var writer = new StreamWriter(archive.CreateEntry("manifest.json").Open()); writer.Write(manifest.ToJsonString());
             }
