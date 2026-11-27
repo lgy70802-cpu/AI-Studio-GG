@@ -1,0 +1,793 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>A股插件预览</title><style>body{margin:24px;background:#080d14;color:#c4d0e0;font:14px 'Microsoft YaHei',sans-serif}canvas{width:100%;max-width:1920px;display:block;margin:20px 0}input,button{padding:9px;background:#182435;color:white;border:1px solid #40506a}input{width:380px}</style><h2>A 股自选行情 · 浏览器原型</h2><p>沪深股票可填六位代码，如 600519、300750；000001 默认指深市股票，上证指数请填 sh000001</p><input id="codes" value="sh600519,sz300750,sh600036,sh688981"><button id="apply">应用代码</button><button id="d92">D92 · 1920×462</button><button id="size">横 / 竖屏</button><p><label>模式 <select id="mode"><option value="list">自选列表</option><option value="market">大盘总览</option><option value="detail">个股详情</option><option value="rotate">三页轮播</option></select></label> <label>聚焦 <input id="focus" placeholder="600519 或 sh600519" style="width:130px"></label> <label>排序 <select id="sort"><option value="manual">输入顺序</option><option value="gain">涨幅优先</option><option value="loss">跌幅优先</option></select></label> <label>字号 <select id="font"><option value="1">标准</option><option value="1.15">较大</option><option value=".85">较小</option></select></label></p><p><label><input type="checkbox" id="alert" style="width:auto"> 价格提醒</label> <label>上穿 <input id="above" type="number" min="0" step=".01" style="width:100px"></label> <label>下穿 <input id="below" type="number" min="0" step=".01" style="width:100px"></label> 修改后点击“应用代码”。首次报价建立提醒基准。</p><p>轮播内容 <label><input id="rotateList" type="checkbox" checked style="width:auto">自选</label> <label><input id="rotateMarket" type="checkbox" checked style="width:auto">大盘</label> <label><input id="rotateDetail" type="checkbox" checked style="width:auto">详情</label> 停留秒数（5–120） <label>自选<input id="listSeconds" type="number" min="5" max="120" value="12" style="width:60px"></label> <label>大盘<input id="marketSeconds" type="number" min="5" max="120" value="12" style="width:60px"></label> <label>详情<input id="detailSeconds" type="number" min="5" max="120" value="12" style="width:60px"></label></p><p id="status" role="status">正在加载…</p><canvas></canvas><script>(() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // src/canvas-text.ts
+  var cellCache = /* @__PURE__ */ new Map();
+  function digitCell(c) {
+    const key = c.font;
+    let cell = cellCache.get(key);
+    if (cell === void 0) {
+      cell = Math.max(..."0123456789".split("").map((digit) => c.measureText(digit).width));
+      cellCache.set(key, cell);
+    }
+    return cell;
+  }
+  function tabularTextWidth(c, value) {
+    const cell = digitCell(c);
+    return [...value].reduce((width, char) => width + (/\d/.test(char) ? cell : c.measureText(char).width), 0);
+  }
+  function fillTabularText(c, value, x, y) {
+    const cell = digitCell(c);
+    const width = tabularTextWidth(c, value);
+    const align = c.textAlign;
+    let cursor = align === "center" ? x - width / 2 : align === "right" || align === "end" ? x - width : x;
+    c.save();
+    c.textAlign = "left";
+    for (const char of value) {
+      const actual = c.measureText(char).width;
+      const advance = /\d/.test(char) ? cell : actual;
+      c.fillText(char, cursor + (advance - actual) / 2, y);
+      cursor += advance;
+    }
+    c.restore();
+  }
+
+  // src/chart.ts
+  function tradingMinutePosition(time) {
+    if (!time) return void 0;
+    const compact = time.replace(":", "");
+    if (!/^\d{4}$/.test(compact)) return void 0;
+    const hour = Number(compact.slice(0, 2)), minute2 = Number(compact.slice(2)), clockMinute = hour * 60 + minute2;
+    if (minute2 > 59) return void 0;
+    if (clockMinute >= 570 && clockMinute <= 690) return clockMinute - 570;
+    if (clockMinute >= 780 && clockMinute <= 900) return 120 + clockMinute - 780;
+    return void 0;
+  }
+  function drawIntradayChart(c, values, times, previous, s, x, y, w, h) {
+    const muted = "#91a0b5";
+    if (!values || values.length < 2 || !previous || previous <= 0) {
+      c.fillStyle = muted;
+      c.font = '20px "ManropeTabular","Microsoft YaHei",sans-serif';
+      c.textAlign = "center";
+      fillTabularText(c, values?.length ? "\u7B49\u5F85\u66F4\u591A\u5206\u65F6\u91C7\u6837" : "\u5206\u65F6\u6682\u4E0D\u53EF\u7528", x + w / 2, y + h / 2);
+      return;
+    }
+    const leftGutter = Math.min(76, Math.max(54, w * 0.08));
+    const rightGutter = Math.min(70, Math.max(54, w * 0.075));
+    const bottomGutter = 30;
+    const px = x + leftGutter;
+    const py = y + 4;
+    const pw = w - leftGutter - rightGutter;
+    const ph = h - bottomGutter - 8;
+    const maxMove = Math.max(...values.map((v) => Math.abs(v / previous - 1)), 3e-3);
+    const pctSpan = Math.ceil(maxMove * 1e3) / 1e3 * 1.12;
+    const high = previous * (1 + pctSpan);
+    const low = previous * (1 - pctSpan);
+    const up = s.greenUp ? "#3bd6a0" : "#ff646d";
+    const down = s.greenUp ? "#ff646d" : "#3bd6a0";
+    const yFor = (v) => py + (high - v) / (high - low) * ph;
+    const label = (value, tx, ty, color, align) => {
+      c.fillStyle = color;
+      c.font = '15px "ManropeTabular","Microsoft YaHei",sans-serif';
+      c.textAlign = align;
+      fillTabularText(c, value, tx, ty);
+    };
+    c.save();
+    c.strokeStyle = "#2a3749";
+    c.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const ratio = i / 4;
+      const gy = py + ph * ratio;
+      const price = high - (high - low) * ratio;
+      const percent = (price / previous - 1) * 100;
+      c.beginPath();
+      c.moveTo(px, gy);
+      c.lineTo(px + pw, gy);
+      c.stroke();
+      const axisColor = i < 2 ? up : i > 2 ? down : muted;
+      label(price.toFixed(2), px - 8, gy + 5, axisColor, "right");
+      label(`${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`, px + pw + 8, gy + 5, axisColor, "left");
+    }
+    const timeLabels = ["09:30", "10:30", "11:30/13:00", "14:00", "15:00"];
+    timeLabels.forEach((time, i) => {
+      const gx = px + pw * i / 4;
+      c.strokeStyle = "#263347";
+      c.beginPath();
+      c.moveTo(gx, py);
+      c.lineTo(gx, py + ph);
+      c.stroke();
+      label(time, gx, py + ph + 23, muted, i === 0 ? "left" : i === 4 ? "right" : "center");
+    });
+    const base = yFor(previous);
+    c.setLineDash([5, 5]);
+    c.strokeStyle = "#d9a441";
+    c.beginPath();
+    c.moveTo(px, base);
+    c.lineTo(px + pw, base);
+    c.stroke();
+    c.setLineDash([]);
+    c.beginPath();
+    values.forEach((v, i) => {
+      const position = tradingMinutePosition(times?.[i]), vx = px + (position === void 0 ? i / (values.length - 1) : position / 240) * pw;
+      const vy = yFor(v);
+      i ? c.lineTo(vx, vy) : c.moveTo(vx, vy);
+    });
+    c.strokeStyle = "#3b8cff";
+    c.lineWidth = 2.2;
+    c.stroke();
+    c.restore();
+  }
+
+  // src/header-clock.ts
+  function drawHeaderClock(c, right, baseline, compact = false, now = /* @__PURE__ */ new Date()) {
+    const weekdays = ["\u661F\u671F\u65E5", "\u661F\u671F\u4E00", "\u661F\u671F\u4E8C", "\u661F\u671F\u4E09", "\u661F\u671F\u56DB", "\u661F\u671F\u4E94", "\u661F\u671F\u516D"];
+    const date = `${now.getMonth() + 1}\u6708${now.getDate()}\u65E5 ${weekdays[now.getDay()]}`;
+    const time = [now.getHours(), now.getMinutes(), now.getSeconds()].map((v) => String(v).padStart(2, "0")).join(":");
+    const timeSize = compact ? 20 : 29;
+    const dateSize = compact ? 13 : 17;
+    c.save();
+    c.textAlign = "right";
+    c.textBaseline = "alphabetic";
+    c.fillStyle = "#eef3fb";
+    c.font = `600 ${timeSize}px "ManropeTabular","Microsoft YaHei",sans-serif`;
+    fillTabularText(c, time, right, baseline);
+    const timeWidth = tabularTextWidth(c, time);
+    c.fillStyle = "#91a0b5";
+    c.font = `400 ${dateSize}px "ManropeTabular","Microsoft YaHei",sans-serif`;
+    fillTabularText(c, date, right - timeWidth - (compact ? 10 : 18), baseline - (compact ? 2 : 3));
+    c.restore();
+  }
+
+  // src/ultrawide.ts
+  function drawUltrawide(canvas2, scene2, s, screen, codes) {
+    const c = canvas2.getContext("2d"), H = 462, W = canvas2.width / canvas2.height * H, k = canvas2.height / H;
+    c.save();
+    c.scale(k, k);
+    const muted = "#91a0b5", white = "#eef3fb", amber = "#f0ba55";
+    const color = (v) => v === 0 ? muted : v > 0 !== !!s.greenUp ? "#ff646d" : "#3bd6a0";
+    const fmt = (v) => v !== void 0 && Number.isFinite(v) ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
+    const pct = (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%";
+    function text(t, x, y, size = 22, col = white, width = W - x - 22) {
+      c.font = `${size >= 28 ? 600 : 400} ${size}px "ManropeTabular","Microsoft YaHei",sans-serif`;
+      c.fillStyle = col;
+      c.textAlign = "left";
+      while (tabularTextWidth(c, t) > width && t.length > 1) t = t.slice(0, -2) + "\u2026";
+      fillTabularText(c, t, x, y);
+    }
+    function card(x, y, w, h) {
+      c.fillStyle = "#141d29";
+      c.beginPath();
+      c.roundRect(x, y, w, h, 12);
+      c.fill();
+    }
+    function line(id, x, y, w, h) {
+      const values = scene2.lines[id], q = scene2.quotes.find((q2) => q2.symbol === id);
+      if (!values || values.length < 2) {
+        text(values?.length ? "\u7B49\u5F85\u66F4\u591A\u5206\u65F6\u91C7\u6837" : "\u5206\u65F6\u6682\u4E0D\u53EF\u7528", x + 12, y + h / 2, 20, muted, w - 24);
+        return;
+      }
+      const lo = Math.min(...values), hi = Math.max(...values), range = hi - lo || Math.max(1, hi * 0.01);
+      for (let i = 0; i < 3; i++) {
+        c.strokeStyle = "#263347";
+        c.beginPath();
+        c.moveTo(x, y + i * h / 2);
+        c.lineTo(x + w, y + i * h / 2);
+        c.stroke();
+      }
+      c.beginPath();
+      values.forEach((v, i) => {
+        const position = tradingMinutePosition(scene2.lineTimes?.[id]?.[i]), px = x + (position === void 0 ? i / (values.length - 1) : position / 240) * w, py = y + h * 0.9 - (v - lo) / range * h * 0.8;
+        i ? c.lineTo(px, py) : c.moveTo(px, py);
+      });
+      c.strokeStyle = color(q?.percent ?? 0);
+      c.lineWidth = 2.5;
+      c.stroke();
+    }
+    const focus = s.focus || codes[0] || "", ids = ["sh000001", "sz399001", "sz399006"];
+    text(screen.kind === "list" ? "\u81EA\u9009\u884C\u60C5" : screen.kind === "market" ? "\u5E02\u573A\u603B\u89C8" : "\u4E2A\u80A1\u805A\u7126", 24, 49, 34);
+    text("A \u80A1 \xB7 \u817E\u8BAF\u884C\u60C5", 228, 47, 20, muted);
+    drawHeaderClock(c, W - 24, 48);
+    const foot = scene2.error || (scene2.alert ? `${scene2.alert.symbol} ${scene2.alert.direction} ${fmt(scene2.alert.price)} \xB7 \u4EF7\u683C\u63D0\u9192` : "\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF \xB7 \u4EC5\u4F9B\u53C2\u8003");
+    const stamp = (screen.kind === "detail" ? scene2.quotes.filter((q) => q.symbol === focus) : scene2.quotes).map((q) => q.stamp).sort()[0];
+    text(foot, 24, H - 20, 18, scene2.error || scene2.alert ? amber : muted, W * 0.55);
+    text(stamp ? `\u884C\u60C5 ${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)} ${stamp.slice(8, 10)}:${stamp.slice(10, 12)}` : "\u7B49\u5F85\u884C\u60C5", W - 380, H - 20, 18, muted, 356);
+    function indexColumn(w) {
+      ids.forEach((id, i) => {
+        const q = scene2.quotes.find((q2) => q2.symbol === id), y = 76 + i * 112;
+        card(24, y, w, 100);
+        text(q?.name ?? ["\u4E0A\u8BC1\u6307\u6570", "\u6DF1\u8BC1\u6210\u6307", "\u521B\u4E1A\u677F\u6307"][i], 40, y + 29, 20, muted, w - 32);
+        text(fmt(q?.price), 40, y + 67, 32, white, w - 130);
+        text(q ? pct(q.percent) : "\u2014", 24 + w - 100, y + 68, 20, q ? color(q.percent) : muted, 88);
+      });
+    }
+    if (screen.kind === "list") {
+      const side = Math.max(270, W * 0.165);
+      indexColumn(side);
+      const sorted = [...codes];
+      if (s.sort === "gain" || s.sort === "loss")
+        sorted.sort((a, b) => {
+          const x = scene2.quotes.find((q) => q.symbol === a)?.percent, y = scene2.quotes.find((q) => q.symbol === b)?.percent;
+          return x === void 0 ? 1 : y === void 0 ? -1 : (s.sort === "gain" ? -1 : 1) * (x - y);
+        });
+      const x0 = side + 40, gap = 14, cw = (W - x0 - 24 - 3 * gap) / 4;
+      text(`\u7B2C ${screen.page + 1} / ${Math.max(1, Math.ceil(codes.length / 4))} \u9875`, 410, 47, 20, muted, 150);
+      sorted.slice(screen.page * 4, screen.page * 4 + 4).forEach((id, i) => {
+        const x = x0 + i * (cw + gap), q = scene2.quotes.find((q2) => q2.symbol === id);
+        card(x, 76, cw, 324);
+        const font = Math.max(0.85, Math.min(1.15, Number(s.fontScale) || 1));
+        text(q?.name ?? id, x + 18, 114, 27 * font, white, cw - 36);
+        text(id, x + 18, 144, 18, muted, cw - 36);
+        text(fmt(q?.price), x + 18, 201, 44 * font, white, cw - 36);
+        text(q ? pct(q.percent) : "\u6682\u65E0\u884C\u60C5", x + 18, 240, 28 * font, q ? color(q.percent) : muted, cw - 36);
+        line(id, x + 18, 270, cw - 36, 86);
+        text("\u5F53\u65E5\u5206\u65F6", x + 18, 382, 17, muted, cw - 36);
+      });
+    } else if (screen.kind === "market") {
+      const side = Math.max(280, W * 0.19);
+      indexColumn(side);
+      const x = side + 40, stats = Math.max(300, W * 0.22), chartW = W - x - stats - 40;
+      card(x, 76, chartW, 324);
+      text("\u4E0A\u8BC1\u5206\u65F6", x + 18, 113, 25);
+      line("sh000001", x + 20, 140, chartW - 40, 206);
+      text("\u5F53\u65E5\u5DF2\u8FD4\u56DE\u91C7\u6837\u70B9", x + 20, 380, 17, muted);
+      const sx = x + chartW + 16;
+      card(sx, 76, stats, 324);
+      text("\u5E02\u573A\u7EDF\u8BA1", sx + 20, 116, 26);
+      text("\u4E0A\u6DA8 / \u4E0B\u8DCC\u5BB6\u6570", sx + 20, 167, 20, muted);
+      text("\u6682\u4E0D\u53EF\u7528", sx + 20, 206, 28, muted);
+      text("\u4E24\u5E02\u6210\u4EA4\u989D", sx + 20, 256, 20, muted);
+      text("\u6682\u4E0D\u53EF\u7528", sx + 20, 295, 28, muted);
+      text("\u6682\u65E0\u53EF\u9760\u7EDF\u8BA1\u6570\u636E", sx + 20, 378, 18, muted);
+    } else {
+      const q = scene2.quotes.find((q2) => q2.symbol === focus), left = Math.max(330, W * 0.23), right = Math.max(260, W * 0.17), x = left + 40, cw = W - x - right - 40;
+      card(24, 76, left, 324);
+      text(q?.name ?? "\u7B49\u5F85\u884C\u60C5", 44, 119, 30, white, left - 40);
+      text(focus, 44, 151, 20, muted);
+      text(fmt(q?.price), 44, 220, 56, q ? color(q.percent) : white, left - 40);
+      text(q ? pct(q.percent) : "\u2014", 44, 266, 34, q ? color(q.percent) : muted);
+      text(
+        scene2.alert ? `${scene2.alert.direction} ${fmt(scene2.alert.price)} \u5DF2\u89E6\u53D1` : s.alertEnabled ? "\u4EF7\u683C\u63D0\u9192\u5DF2\u5F00\u542F" : "\u4EF7\u683C\u63D0\u9192\u672A\u5F00\u542F",
+        44,
+        373,
+        21,
+        scene2.alert ? amber : muted,
+        left - 40
+      );
+      card(x, 76, cw, 324);
+      text("\u5F53\u65E5\u5206\u65F6", x + 20, 114, 25);
+      drawIntradayChart(c, scene2.lines[focus], scene2.lineTimes?.[focus], q?.previous, s, x + 12, 132, cw - 24, 250);
+      const rx = x + cw + 16;
+      card(rx, 76, right, 324);
+      [
+        ["\u4ECA\u5F00", q?.open],
+        ["\u6700\u9AD8", q?.high],
+        ["\u6700\u4F4E", q?.low],
+        ["\u6628\u6536", q?.previous]
+      ].forEach(([label, v], i) => {
+        const y = 113 + i * 76;
+        text(String(label), rx + 18, y, 19, muted);
+        text(fmt(v), rx + 18, y + 34, 30, white, right - 36);
+      });
+    }
+    c.restore();
+  }
+
+  // src/rotation.ts
+  function rotation(s, pages) {
+    const seconds = (v) => Math.max(5, Math.min(120, Number(v) || Number(s.pageSeconds) || 12));
+    const lists = Array.from({ length: Math.max(1, pages) }, (_, page2) => ({ kind: "list", page: page2, seconds: seconds(s.listSeconds) }));
+    const market = { kind: "market", page: 0, seconds: seconds(s.marketSeconds) };
+    const detail = { kind: "detail", page: 0, seconds: seconds(s.detailSeconds) };
+    if (s.mode === "market") return [market];
+    if (s.mode === "detail") return [detail];
+    if (s.mode !== "rotate") return lists;
+    const plan = [...s.rotateList !== false ? lists : [], ...s.rotateMarket !== false ? [market] : [], ...s.rotateDetail !== false ? [detail] : []];
+    return plan.length ? plan : lists;
+  }
+
+  // src/market.ts
+  function drawMarket(canvas2, scene2, s) {
+    const c = canvas2.getContext("2d"), portrait = canvas2.width / canvas2.height < 1.2, W = portrait ? 640 : 1280, H = portrait ? 960 : 720, k = Math.min(canvas2.width / W, canvas2.height / H);
+    c.save();
+    c.translate((canvas2.width - W * k) / 2, (canvas2.height - H * k) / 2);
+    c.scale(k, k);
+    const text = (v, x2, y2, size = 22, color2 = "#eef3fb", align = "left") => {
+      c.font = `${size >= 28 ? 600 : 400} ${size}px "ManropeTabular","Microsoft YaHei",sans-serif`;
+      c.fillStyle = color2;
+      c.textAlign = align;
+      fillTabularText(c, v, x2, y2);
+    };
+    const card = (x2, y2, w2, h2) => {
+      c.fillStyle = "#141d29";
+      c.beginPath();
+      c.roundRect(x2, y2, w2, h2, 12);
+      c.fill();
+    };
+    const color = (n) => n === 0 ? "#91a0b5" : n > 0 !== !!s.greenUp ? "#ff646d" : "#3bd6a0";
+    const fmt = (v) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    text("\u5E02\u573A\u603B\u89C8", 28, 61, 40);
+    text("A \u80A1 \xB7 \u6307\u6570\u4E0E\u5E02\u573A\u7EDF\u8BA1", 28, 97, 20, "#91a0b5");
+    drawHeaderClock(c, W - 28, 58, portrait);
+    const ids = ["sh000001", "sz399001", "sz399006"], iw = (W - 76) / 3;
+    ids.forEach((id, i) => {
+      const q2 = scene2.quotes.find((q3) => q3.symbol === id), x2 = 28 + i * (iw + 10);
+      card(x2, 120, iw, 124);
+      text(q2?.name ?? ["\u4E0A\u8BC1\u6307\u6570", "\u6DF1\u8BC1\u6210\u6307", "\u521B\u4E1A\u677F\u6307"][i], x2 + 14, 151, portrait ? 18 : 22);
+      text(q2 ? fmt(q2.price) : "\u2014", x2 + 14, 191, portrait ? 23 : 36);
+      text(q2 ? `${q2.percent > 0 ? "+" : ""}${q2.percent.toFixed(2)}%` : "\u6682\u65E0\u884C\u60C5", x2 + 14, 225, 21, q2 ? color(q2.percent) : "#91a0b5");
+    });
+    const cx = 28, cy = 264, cw = portrait ? W - 56 : 770, ch = portrait ? 338 : 350;
+    card(cx, cy, cw, ch);
+    text("\u4E0A\u8BC1\u5206\u65F6", cx + 18, cy + 36, 24);
+    const line = scene2.lines.sh000001, q = scene2.quotes.find((q2) => q2.symbol === "sh000001"), left = cx + 88, right = cx + cw - 22, top = cy + 68, bottom = cy + ch - 48;
+    if (line?.length > 1) {
+      const low = Math.min(...line), high = Math.max(...line), range = high - low || 1;
+      for (let i = 0; i < 3; i++) {
+        const y2 = top + (bottom - top) * i / 2;
+        text(fmt(high - range * i / 2), left - 10, y2 + 6, 16, "#91a0b5", "right");
+        c.strokeStyle = "#283446";
+        c.beginPath();
+        c.moveTo(left, y2);
+        c.lineTo(right, y2);
+        c.stroke();
+      }
+      c.beginPath();
+      line.forEach((v, i) => {
+        const position = tradingMinutePosition(scene2.lineTimes?.sh000001?.[i]), x2 = left + (position === void 0 ? i / (line.length - 1) : position / 240) * (right - left), y2 = bottom - (v - low) / range * (bottom - top);
+        i ? c.lineTo(x2, y2) : c.moveTo(x2, y2);
+      });
+      c.strokeStyle = color(q?.percent ?? 0);
+      c.lineWidth = 2.5;
+      c.stroke();
+    } else text(line?.length === 1 ? "\u5206\u65F6\u91C7\u6837\u4E0D\u8DB3\uFF0C\u7B49\u5F85\u66F4\u65B0" : "\u5206\u65F6\u6682\u4E0D\u53EF\u7528", cx + cw / 2, cy + ch / 2, 22, "#91a0b5", "center");
+    text("\u5F53\u65E5\u5DF2\u8FD4\u56DE\u91C7\u6837\u70B9", left, cy + ch - 16, 16, "#91a0b5");
+    const x = portrait ? 28 : 818, y = portrait ? 622 : 264, w = portrait ? 584 : 434, h = portrait ? 210 : 350;
+    card(x, y, w, h);
+    text("\u5E02\u573A\u7EDF\u8BA1", x + 18, y + 36, 24);
+    text("\u4E0A\u6DA8 / \u4E0B\u8DCC\u5BB6\u6570", x + 18, y + 78, 19, "#91a0b5");
+    text("\u6682\u4E0D\u53EF\u7528", x + w - 18, y + 78, 21, "#91a0b5", "right");
+    text("\u4E24\u5E02\u6210\u4EA4\u989D", x + 18, y + 126, 19, "#91a0b5");
+    text("\u6682\u4E0D\u53EF\u7528", x + w - 18, y + 126, 21, "#91a0b5", "right");
+    text("\u6682\u65E0\u53EF\u9760\u7EDF\u8BA1\u6570\u636E", x + 18, y + h - 28, 17, "#73849c");
+    const stamp = ids.map((id) => scene2.quotes.find((q2) => q2.symbol === id)?.stamp).filter(Boolean).sort()[0];
+    text(stamp ? `\u6307\u6570\u65F6\u95F4 ${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)} ${stamp.slice(8, 10)}:${stamp.slice(10, 12)}` : "\u6307\u6570\u65F6\u95F4 \u2014", 28, H - 48, 18, "#91a0b5");
+    text(
+      scene2.error || (scene2.alert ? `${scene2.alert.symbol} ${scene2.alert.direction} ${scene2.alert.price.toFixed(2)} \xB7 \u4EF7\u683C\u63D0\u9192` : "\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF \xB7 \u4EC5\u4F9B\u53C2\u8003"),
+      28,
+      H - 20,
+      16,
+      scene2.error || scene2.alert ? "#f0ba55" : "#64758b"
+    );
+    c.restore();
+  }
+
+  // src/alerts.ts
+  var AlertTracker = class {
+    constructor() {
+      __publicField(this, "rules", /* @__PURE__ */ new Map());
+      __publicField(this, "latest");
+      __publicField(this, "signature", "");
+    }
+    update(q, s, now = Date.now()) {
+      const signature = JSON.stringify([q?.symbol, s.alertEnabled, Number(s.alertAbove) || 0, Number(s.alertBelow) || 0]);
+      if (signature !== this.signature) {
+        this.rules.clear();
+        this.latest = void 0;
+        this.signature = signature;
+      }
+      if (!q || !s.alertEnabled) return void 0;
+      const t = q.stamp, epoch = Date.parse(`${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}T${t.slice(8, 10)}:${t.slice(10, 12)}:${t.slice(12, 14)}+08:00`);
+      if (!Number.isFinite(epoch) || now - epoch > 3e5 || epoch - now > 6e4) return void 0;
+      for (const [direction, threshold] of [
+        ["\u4E0A\u7A7F", Number(s.alertAbove)],
+        ["\u4E0B\u7A7F", Number(s.alertBelow)]
+      ]) {
+        if (!Number.isFinite(threshold) || threshold <= 0) continue;
+        const key = `${q.symbol}:${direction}:${threshold}`, old = this.rules.get(key);
+        if (old && old.stamp >= t) continue;
+        const sameDay = old?.stamp.slice(0, 8) === t.slice(0, 8);
+        const crossed = old && sameDay && (direction === "\u4E0A\u7A7F" ? old.price < threshold && q.price >= threshold : old.price > threshold && q.price <= threshold);
+        const fired = !!(sameDay && old?.fired);
+        this.rules.set(key, { stamp: t, price: q.price, fired: fired || !!crossed });
+        if (crossed && !fired) this.latest = { symbol: q.symbol, direction, price: threshold, stamp: t };
+      }
+      return this.latest?.stamp.slice(0, 8) === t.slice(0, 8) && this.latest.symbol === q.symbol ? this.latest : void 0;
+    }
+  };
+
+  // src/detail.ts
+  function drawDetail(canvas2, scene2, s, code) {
+    const c = canvas2.getContext("2d"), portrait = canvas2.width / canvas2.height < 1.2, W = portrait ? 640 : 1280, H = portrait ? 960 : 720;
+    const k = Math.min(canvas2.width / W, canvas2.height / H);
+    c.save();
+    c.translate((canvas2.width - W * k) / 2, (canvas2.height - H * k) / 2);
+    c.scale(k, k);
+    const q = scene2.quotes.find((q2) => q2.symbol === code), up = s.greenUp ? "#3bd6a0" : "#ff646d", down = s.greenUp ? "#ff646d" : "#3bd6a0", col = (q?.percent ?? 0) >= 0 ? up : down;
+    const text = (t2, x, y2, size = 22, color = "#eef3fb", align = "left") => {
+      c.font = `${size >= 30 ? 600 : 400} ${size}px "ManropeTabular","Microsoft YaHei",sans-serif`;
+      c.fillStyle = color;
+      c.textAlign = align;
+      fillTabularText(c, t2, x, y2);
+    };
+    const card = (x, y2, w, h2) => {
+      c.fillStyle = "#141d29";
+      c.beginPath();
+      c.roundRect(x, y2, w, h2, 12);
+      c.fill();
+    };
+    const fmt = (n) => n && Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
+    text("\u4E2A\u80A1\u805A\u7126", 28, 60, 38);
+    text(`${q?.name ?? "\u7B49\u5F85\u884C\u60C5"} \xB7 ${code}`, 28, 97, 22, "#91a0b5");
+    drawHeaderClock(c, W - 28, 57, portrait);
+    text(fmt(q?.price), 28, portrait ? 174 : 195, portrait ? 64 : 88, col);
+    text(q ? `${q.percent > 0 ? "+" : ""}${q.percent.toFixed(2)}%` : "\u2014", 28, portrait ? 218 : 240, 32, col);
+    const metrics = [
+      ["\u4ECA\u5F00", q?.open],
+      ["\u6700\u9AD8", q?.high],
+      ["\u6700\u4F4E", q?.low],
+      ["\u6628\u6536", q?.previous]
+    ];
+    metrics.forEach(([label, value], i) => {
+      const x = portrait ? 28 + i % 2 * 298 : 730 + i % 2 * 262, y2 = (portrait ? 242 : 120) + Math.floor(i / 2) * (portrait ? 80 : 72);
+      card(x, y2, portrait ? 286 : 250, portrait ? 70 : 64);
+      text(label, x + 14, y2 + 23, 17, "#91a0b5");
+      text(fmt(value), x + 14, y2 + 54, 26);
+    });
+    const y = portrait ? 418 : 280, h = portrait ? 350 : 285;
+    card(28, y, W - 56, h);
+    text("\u5F53\u65E5\u5206\u65F6", 46, y + 34, 22);
+    drawIntradayChart(c, scene2.lines[code], scene2.lineTimes?.[code], q?.previous, s, 42, y + 53, W - 84, h - 66);
+    const alert = scene2.alert, ay = portrait ? 790 : 584;
+    card(28, ay, W - 56, 54);
+    text(
+      alert ? `${alert.symbol} ${alert.direction} ${fmt(alert.price)} \xB7 ${alert.stamp.slice(8, 10)}:${alert.stamp.slice(10, 12)}` : s.alertEnabled ? "\u4EF7\u683C\u63D0\u9192\u5DF2\u5F00\u542F \xB7 \u7B49\u5F85\u65B0\u7684\u8DE8\u4EF7\u884C\u60C5" : "\u4EF7\u683C\u63D0\u9192\u672A\u5F00\u542F",
+      46,
+      ay + 34,
+      portrait ? 18 : 22,
+      alert ? "#f0ba55" : "#91a0b5"
+    );
+    const t = q?.stamp;
+    text(t ? `\u884C\u60C5\u65F6\u95F4 ${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)} ${t.slice(8, 10)}:${t.slice(10, 12)}` : "\u884C\u60C5\u65F6\u95F4 \u2014", 28, H - 47, 18, "#91a0b5");
+    text(scene2.error || "\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF \xB7 \u4EC5\u4F9B\u53C2\u8003", 28, H - 20, 16, scene2.error ? "#f0ba55" : "#64758b");
+    c.restore();
+  }
+
+  // src/stocks.ts
+  var defaults = {
+    symbols: "sh600519,sz300750,sh600036,sh688981",
+    interval: 10,
+    pageSeconds: 12,
+    greenUp: false,
+    mode: "list",
+    focus: "",
+    fontScale: 1,
+    sort: "manual",
+    alertEnabled: false
+  };
+  var indices = ["sh000001", "sz399001", "sz399006"];
+  function normalizeSymbol(input) {
+    const code = input.trim().toLowerCase();
+    if (/^6\d{5}$/.test(code)) return "sh" + code;
+    if (/^[03]\d{5}$/.test(code)) return "sz" + code;
+    return code;
+  }
+  function symbols(input) {
+    const a = input.toLowerCase().split(/[\s,，;；]+/).filter(Boolean).map(normalizeSymbol);
+    if (!a.length || a.length > 20 || a.some((s) => !/^(sh|sz|bj)\d{6}$/.test(s))) throw Error("\u8BF7\u8F93\u5165 1\u201320 \u4E2A\u80A1\u7968\u4EE3\u7801\uFF0C\u5982 600519\u3001300750\uFF1B\u5176\u4ED6\u5E02\u573A\u8BF7\u5E26\u524D\u7F00");
+    return [...new Set(a)];
+  }
+  function parseQuotes(text) {
+    const out = [];
+    for (const m of text.matchAll(/v_((?:sh|sz|bj)\d{6})="([^"]*)"/g)) {
+      const f = m[2].split("~"), price = Number(f[3]), percent = Number(f[32]);
+      if (f.length < 35 || !f[1] || !/^\d{14}$/.test(f[30]) || !Number.isFinite(price) || price <= 0 || !f[32] || !Number.isFinite(percent)) continue;
+      out.push({
+        symbol: m[1],
+        name: f[1],
+        price,
+        percent,
+        stamp: f[30],
+        open: Number(f[5]) || void 0,
+        high: Number(f[33]) || void 0,
+        low: Number(f[34]) || void 0,
+        previous: Number(f[4]) || void 0
+      });
+    }
+    return out;
+  }
+  async function request(url, signal) {
+    const r = await fetch(url, { signal, cache: "no-store" });
+    if (!r.ok) throw Error(`\u884C\u60C5\u8BF7\u6C42\u5931\u8D25 ${r.status}`);
+    return r;
+  }
+  async function getQuotes(codes, signal) {
+    const r = await request("https://qt.gtimg.cn/q=" + codes.join(","), signal);
+    const q = parseQuotes(new TextDecoder("gbk").decode(await r.arrayBuffer()));
+    if (!q.length) throw Error("\u672A\u6536\u5230\u6709\u6548\u884C\u60C5");
+    return q;
+  }
+  async function minute(code, stamp, signal) {
+    const r = await request("https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=" + code, signal);
+    const b = await r.json(), d = b.data?.[code]?.data;
+    if (String(d?.date).replaceAll("-", "") !== stamp.slice(0, 8)) return { values: [], times: [] };
+    const values = [], times = [];
+    for (const row of d.data ?? []) {
+      const [time, rawPrice] = String(row).trim().split(/\s+/), price = Number(rawPrice);
+      if (!/^\d{4}$/.test(time) || tradingMinutePosition(time) === void 0 || !Number.isFinite(price) || price <= 0) continue;
+      values.push(price);
+      times.push(time);
+    }
+    return { values, times };
+  }
+  function createFeed(settings2, changed, tracker2 = new AlertTracker()) {
+    const scene2 = { quotes: [], lines: {}, lineTimes: {}, error: "\u6B63\u5728\u8FDE\u63A5\u884C\u60C5\u2026" };
+    let stopped = false, busy = false, last = 0, historyTime = 0, controller, codes, focusCode = "";
+    try {
+      codes = symbols(settings2.symbols ?? defaults.symbols);
+      if (settings2.focus) {
+        const focus = symbols(settings2.focus);
+        if (focus.length !== 1) throw Error("\u805A\u7126\u4EE3\u7801\u53EA\u80FD\u586B\u5199\u4E00\u53EA\u80A1\u7968");
+        focusCode = focus[0];
+        codes = [.../* @__PURE__ */ new Set([...codes, ...focus])];
+      }
+    } catch (e) {
+      scene2.error = e.message;
+      changed(scene2);
+      return { tick: () => {
+      }, stop: () => {
+      } };
+    }
+    async function tick() {
+      if (stopped || busy || Date.now() - last < Math.max(10, Math.min(300, Number(settings2.interval) || 10)) * 1e3) return;
+      busy = true;
+      last = Date.now();
+      controller = new AbortController();
+      const timer = setTimeout(() => controller?.abort(), 12e3);
+      try {
+        const result = await getQuotes([.../* @__PURE__ */ new Set([...indices, ...codes])], controller.signal);
+        if (stopped) return;
+        const old = scene2.quotes;
+        scene2.quotes = result;
+        for (const id of Object.keys(scene2.lines)) {
+          if (!result.some((q) => q.symbol === id && q.stamp.slice(0, 8) === old.find((o) => o.symbol === id)?.stamp.slice(0, 8))) {
+            delete scene2.lines[id];
+            delete scene2.lineTimes?.[id];
+          }
+        }
+        scene2.alert = tracker2.update(
+          result.find((q) => q.symbol === (focusCode || codes[0])),
+          settings2
+        );
+        const missing = codes.filter((s) => !result.some((q) => q.symbol === s));
+        scene2.error = missing.length ? "\u65E0\u884C\u60C5\uFF1A" + missing.join(", ") : "";
+        changed(scene2);
+        if (Date.now() - historyTime >= 6e4) {
+          historyTime = Date.now();
+          const historyCodes = [.../* @__PURE__ */ new Set([...settings2.mode === "market" || settings2.mode === "rotate" && settings2.rotateMarket !== false ? ["sh000001"] : [], ...codes])];
+          for (let i = 0; i < historyCodes.length && !stopped; i += 4) {
+            await Promise.allSettled(
+              historyCodes.slice(i, i + 4).map(async (id) => {
+                const q = result.find((q2) => q2.symbol === id);
+                if (q) {
+                  const series = await minute(id, q.stamp, controller.signal);
+                  if (!stopped) {
+                    scene2.lines[id] = series.values;
+                    scene2.lineTimes[id] = series.times;
+                  }
+                }
+              })
+            );
+            if (!stopped) changed(scene2);
+          }
+        }
+      } catch (e) {
+        if (!stopped) {
+          scene2.error = "\u8FDE\u63A5\u5F02\u5E38 \xB7 \u4FDD\u7559\u4E0A\u6B21\u884C\u60C5";
+          console.warn(JSON.stringify({ event: "stocks_fetch_failed", message: String(e) }));
+          changed(scene2);
+        }
+      } finally {
+        clearTimeout(timer);
+        busy = false;
+      }
+    }
+    return {
+      tick,
+      stop() {
+        stopped = true;
+        controller?.abort();
+      }
+    };
+  }
+  function draw(canvas2, scene2, s, page2 = 0) {
+    s = { ...s, focus: normalizeSymbol(s.focus ?? "") };
+    const W = Math.max(1, Math.min(4096, Number(s.ActionGeometry?.width) || 1280)), H = Math.max(1, Math.min(4096, Number(s.ActionGeometry?.height) || 720));
+    if (canvas2.width !== W) canvas2.width = W;
+    if (canvas2.height !== H) canvas2.height = H;
+    const c = canvas2.getContext("2d");
+    c.fillStyle = "#0b1018";
+    c.fillRect(0, 0, W, H);
+    let selection = [];
+    try {
+      selection = symbols(s.symbols ?? defaults.symbols);
+    } catch {
+    }
+    const plan = rotation(s, Math.ceil(selection.length / 4));
+    const active = plan[page2 % plan.length];
+    if (W / H >= 3) {
+      drawUltrawide(canvas2, scene2, s, active, selection);
+      return;
+    }
+    if (active.kind === "market") {
+      drawMarket(canvas2, scene2, s);
+      return;
+    }
+    if (active.kind === "detail") {
+      drawDetail(canvas2, scene2, s, s.focus || selection[0] || "");
+      return;
+    }
+    page2 = active.page;
+    const narrow = W / H < 1.2, bw = narrow ? 640 : 1280, bh = narrow ? 960 : 720, k = Math.min(W / bw, H / bh);
+    c.save();
+    c.translate((W - bw * k) / 2, (H - bh * k) / 2);
+    c.scale(k, k);
+    const color = (n) => n === 0 ? "#abb6c7" : n > 0 !== !!s.greenUp ? "#ff646d" : "#3bd6a0";
+    function text(t, x, y, size = 22, col = "#eef3fb", align = "left") {
+      c.fillStyle = col;
+      c.font = `${size >= 30 ? 600 : 400} ${size * Math.max(0.85, Math.min(1.15, Number(s.fontScale) || 1))}px "ManropeTabular","Microsoft YaHei",sans-serif`;
+      c.textAlign = align;
+      fillTabularText(c, t, x, y);
+    }
+    function card(x, y, w, h) {
+      c.fillStyle = "#141d29";
+      c.beginPath();
+      c.roundRect(x, y, w, h, 12);
+      c.fill();
+    }
+    const fmt = (n) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), pct = (n) => (n > 0 ? "+" : "") + n.toFixed(2) + "%";
+    text("\u81EA\u9009\u884C\u60C5", 28, 64, 42);
+    text("A \u80A1 \xB7 \u81EA\u9009\u5217\u8868", 30, 98, 20, "#91a0b5");
+    drawHeaderClock(c, bw - 28, 59, narrow);
+    const iw = (bw - 76) / 3;
+    indices.forEach((id, i) => {
+      const q = scene2.quotes.find((q2) => q2.symbol === id), x = 28 + i * (iw + 10);
+      card(x, 126, iw, 112);
+      text(q?.name ?? ["\u4E0A\u8BC1\u6307\u6570", "\u6DF1\u8BC1\u6210\u6307", "\u521B\u4E1A\u677F\u6307"][i], x + 14, 158, narrow ? 17 : 22);
+      text(q ? fmt(q.price) : "\u2014", x + 14, 195, narrow ? 23 : 32, q ? color(q.percent) : "#91a0b5");
+      text(q ? pct(q.percent) : "\u7B49\u5F85\u884C\u60C5", x + 14, 222, 17, q ? color(q.percent) : "#91a0b5");
+    });
+    let codes = [];
+    try {
+      codes = symbols(s.symbols ?? defaults.symbols);
+    } catch {
+    }
+    if (s.sort === "gain" || s.sort === "loss") {
+      const sign = s.sort === "gain" ? -1 : 1;
+      codes.sort((a, b) => {
+        const x = scene2.quotes.find((q) => q.symbol === a)?.percent, y = scene2.quotes.find((q) => q.symbol === b)?.percent;
+        return x === void 0 ? 1 : y === void 0 ? -1 : sign * (x - y);
+      });
+    }
+    const count = Math.max(1, Math.ceil(codes.length / 4)), visible = codes.slice(page2 % count * 4, page2 % count * 4 + 4), rh = narrow ? 133 : 84;
+    visible.forEach((id, i) => {
+      const q = scene2.quotes.find((q2) => q2.symbol === id), y = 260 + i * (rh + 10);
+      card(28, y, bw - 56, rh);
+      text(q?.name ?? id, 46, y + 35, 26);
+      text(id, 46, y + 63, 17, "#91a0b5");
+      text(q ? fmt(q.price) : "\u2014", bw - 185, y + 38, 30, "#eef3fb", "right");
+      text(q ? pct(q.percent) : "\u6682\u65E0\u884C\u60C5", bw - 46, y + 38, 24, q ? color(q.percent) : "#91a0b5", "right");
+      const line = scene2.lines[id], x = narrow ? 48 : 355, lw = narrow ? bw - 96 : 360, ly = narrow ? y + 86 : y + 18, lh = narrow ? 25 : 45;
+      if (line?.length > 1) {
+        const lo = Math.min(...line), range = Math.max(...line) - lo || 1;
+        c.beginPath();
+        line.forEach((v, j) => {
+          const position = tradingMinutePosition(scene2.lineTimes?.[id]?.[j]), px = x + (position === void 0 ? j / (line.length - 1) : position / 240) * lw, py = ly + lh - (v - lo) / range * lh;
+          j ? c.lineTo(px, py) : c.moveTo(px, py);
+        });
+        c.strokeStyle = color(q?.percent ?? 0);
+        c.lineWidth = 2;
+        c.stroke();
+      } else text("\u5206\u65F6\u6682\u4E0D\u53EF\u7528", x, ly + 22, 16, "#64758b");
+    });
+    const stamp = scene2.quotes.map((q) => q.stamp).sort()[0], time = stamp ? `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)} ${stamp.slice(8, 10)}:${stamp.slice(10, 12)}` : "\u2014";
+    text("\u884C\u60C5\u65F6\u95F4 " + time, 28, bh - 48, narrow ? 17 : 19, "#91a0b5");
+    text(
+      scene2.error || (scene2.alert ? `${scene2.alert.symbol} ${scene2.alert.direction} ${scene2.alert.price.toFixed(2)} \xB7 \u4EF7\u683C\u63D0\u9192` : "\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF \xB7 \u4EC5\u4F9B\u53C2\u8003"),
+      28,
+      bh - 20,
+      16,
+      scene2.error || scene2.alert ? "#f0ba55" : "#64758b"
+    );
+    text(`${page2 % count + 1} / ${count}`, bw - 28, bh - 20, 18, "#91a0b5", "right");
+    c.restore();
+  }
+  function screenSeconds(s, page2) {
+    let count = 1;
+    try {
+      count = Math.ceil(symbols(s.symbols ?? defaults.symbols).length / 4);
+    } catch {
+    }
+    const plan = rotation(s, count);
+    return plan[page2 % plan.length].seconds;
+  }
+
+  // src/manrope.ts
+  var loading;
+  function loadManrope() {
+    if (loading) return loading;
+    loading = new FontFace("ManropeTabular", 'url("fonts/manrope.ttf")', { weight: "200 800", style: "normal", featureSettings: '"tnum" 1' }).load().then((font) => {
+      document.fonts.add(font);
+    }).catch((error) => {
+      console.warn(JSON.stringify({ event: "font_load_failed", font: "Manrope", message: String(error) }));
+    });
+    return loading;
+  }
+  void loadManrope();
+
+  // <stdin>
+  var tracker = new AlertTracker();
+  window.tabularTextWidth = tabularTextWidth;
+  var canvas = document.querySelector("canvas");
+  var settings = { ...defaults, ActionGeometry: { width: 1920, height: 462 } };
+  var scene = { quotes: [], lines: {}, lineTimes: {}, error: "\u8FDE\u63A5\u4E2D" };
+  var feed;
+  var page = 0;
+  var elapsed = 0;
+  function render() {
+    draw(canvas, scene, settings, page);
+  }
+  function start() {
+    feed?.stop();
+    page = 0;
+    elapsed = 0;
+    scene = { quotes: [], lines: {}, lineTimes: {}, error: "\u6B63\u5728\u8FDE\u63A5\u884C\u60C5\u2026" };
+    document.querySelector("#status").textContent = "\u6B63\u5728\u5E94\u7528\u4EE3\u7801\u5E76\u83B7\u53D6\u884C\u60C5\u2026";
+    feed = createFeed(settings, (s) => {
+      scene = s;
+      window.stockScene = s;
+      document.querySelector("#status").textContent = s.error || "\u5DF2\u5E94\u7528 \xB7 " + s.quotes.length + " \u6761\u884C\u60C5";
+      render();
+    }, tracker);
+    feed.tick();
+    render();
+  }
+  document.querySelector("#apply").onclick = () => {
+    for (const key of ["rotateList", "rotateMarket", "rotateDetail"]) settings[key] = document.querySelector("#" + key).checked;
+    for (const key of ["listSeconds", "marketSeconds", "detailSeconds"]) settings[key] = Number(document.querySelector("#" + key).value);
+    settings.symbols = document.querySelector("#codes").value;
+    settings.mode = document.querySelector("#mode").value;
+    settings.focus = document.querySelector("#focus").value.trim().toLowerCase();
+    settings.sort = document.querySelector("#sort").value;
+    settings.fontScale = Number(document.querySelector("#font").value);
+    settings.alertEnabled = document.querySelector("#alert").checked;
+    settings.alertAbove = Number(document.querySelector("#above").value);
+    settings.alertBelow = Number(document.querySelector("#below").value);
+    start();
+  };
+  document.querySelector("#size").onclick = () => {
+    settings.ActionGeometry = settings.ActionGeometry.width > settings.ActionGeometry.height ? { width: 640, height: 960 } : { width: 1920, height: 462 };
+    render();
+  };
+  document.querySelector("#d92").onclick = () => {
+    settings.ActionGeometry = { width: 1920, height: 462 };
+    render();
+  };
+  loadManrope().then(render);
+  start();
+  var poll = setInterval(() => feed.tick(), 1e3);
+  var flip = setInterval(() => {
+    if (++elapsed >= screenSeconds(settings, page)) {
+      elapsed = 0;
+      page++;
+    }
+    render();
+  }, 1e3);
+  window.addEventListener("pagehide", () => {
+    feed.stop();
+    clearInterval(poll);
+    clearInterval(flip);
+  });
+})();
+</script></html>

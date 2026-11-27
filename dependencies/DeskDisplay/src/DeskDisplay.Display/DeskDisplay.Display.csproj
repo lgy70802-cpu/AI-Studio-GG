@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DeskDisplay.Core/DeskDisplay.Core.csproj" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Services/VideoJpegFrameSource - 副本.cs" />
+    <Resource Include="Assets/retro-camera-blank.png" />
+  </ItemGroup>
+</Project>

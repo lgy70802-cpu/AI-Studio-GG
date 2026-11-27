@@ -1,0 +1,34 @@
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+**/node_modules/
+**/dist/
+**/.vite/
+**/.DS_Store
+.idea/
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+*.session
+*.session.tmp
+*.log
+*.tmp
+**/release/
+**/release-files/
+*.zip
+
+# Personal migration data and machine-specific inventory.
+/migration/
+/.migration-manifest.json
+
+# Runtime captures, browser profiles and diagnostic builds.
+/artifacts/*
+!/artifacts/d92-vendor-header-fixtures.json
+!/artifacts/d92-wake-heartbeat-result.json
+!/artifacts/d92-device-investigation.md

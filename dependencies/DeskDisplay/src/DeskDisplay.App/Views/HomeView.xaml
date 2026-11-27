@@ -1,0 +1,106 @@
+<UserControl x:Class="DeskDisplay.App.Views.HomeView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:DeskDisplay.App.Views" xmlns:scene="clr-namespace:DeskDisplay.Display.Views;assembly=DeskDisplay.Display"
+ Background="Transparent" Foreground="{DynamicResource Brush.Text}">
+ <UserControl.Resources>
+  <ResourceDictionary>
+   <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Colors.xaml" />
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Typography.xaml" />
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Controls.xaml" />
+    <ResourceDictionary Source="/DeskDisplay.App;component/Themes/Cards.xaml" />
+   </ResourceDictionary.MergedDictionaries>
+  <BooleanToVisibilityConverter x:Key="Visible" /><local:CachedImageConverter x:Key="CachedImage"/>
+  <Style x:Key="ModeButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+   <Setter Property="MinWidth" Value="66" /><Setter Property="Margin" Value="4,0" />
+  </Style>
+  <DataTemplate x:Key="RecentCard">
+   <Border x:Name="RecentRoot" Background="White" CornerRadius="10" Padding="0" Margin="0,0,14,14" ClipToBounds="True"><StackPanel><Grid>
+    <Button Click="OpenRecent" Style="{StaticResource SoftButton}" Padding="0" HorizontalContentAlignment="Stretch" ToolTip="{Binding UseLabel}"><scene:PreviewHost AspectRatio="4"><Border Background="#EDF2F8" CornerRadius="9" ClipToBounds="True"><Grid><Image Source="{Binding Wallpaper.Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/><Image Source="{Binding Theme.CoverUri, Converter={StaticResource CachedImage}}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/></Grid></Border></scene:PreviewHost></Button><WrapPanel HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6"><WrapPanel.Style><Style TargetType="WrapPanel">
+ <Setter Property="Visibility" Value="Collapsed"/>
+ <Style.Triggers>
+  <DataTrigger Binding="{Binding IsMouseOver, ElementName=RecentRoot}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+  <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=RecentRoot}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+ </Style.Triggers>
+</Style></WrapPanel.Style><Button Content="{Binding UseLabel}" Click="UseRecent" Style="{StaticResource SoftButton}"/><Button Content="选择设备" ToolTip="{Binding DataContext.QuickDevice.Alias, RelativeSource={RelativeSource AncestorType=UserControl}, StringFormat=当前目标：{0}, TargetNullValue=尚未选择目标}" Tag="choose" Click="UseRecent" Style="{StaticResource SoftButton}" Margin="6,0,0,0"/><Button Content="☆" ToolTip="固定到首页 / 取消固定" AutomationProperties.Name="固定到首页或取消固定" Command="{Binding DataContext.ToggleHomePinCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Style="{StaticResource IconButton}" Margin="6,0,0,0"/></WrapPanel><Border VerticalAlignment="Top" Background="#990A142B" Padding="9,5" IsHitTestVisible="False"><TextBlock Text="{Binding Name}" Foreground="White" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></Border></Grid>
+
+   </StackPanel></Border>
+  </DataTemplate>
+  <DataTemplate x:Key="DemoCard">
+   <Border Margin="0,0,14,14" CornerRadius="10" Background="{Binding Background}" ClipToBounds="True">
+    <scene:PreviewHost AspectRatio="4"><Grid><Ellipse Width="210" Height="210" Fill="{Binding Accent}" Opacity="0.40" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-105,-35,0"/><StackPanel VerticalAlignment="Bottom" Margin="14,0,14,12"><TextBlock Text="{Binding Name}" Foreground="#FFFFFF" FontWeight="SemiBold"/><TextBlock Text="演示案例" Foreground="#E8FFFFFF" FontSize="11" Margin="0,3,0,0"/></StackPanel></Grid></scene:PreviewHost>
+   </Border>
+  </DataTemplate>
+  </ResourceDictionary>
+ </UserControl.Resources>
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel Margin="32,28,32,28" MaxWidth="1536">
+   <DockPanel Margin="0,0,0,24">
+    <WrapPanel DockPanel.Dock="Right"><Button Content="设备管理" Command="{Binding OpenDeviceSettingsCommand}" Style="{StaticResource SoftButton}" Margin="0,0,8,8"/><Button Content="更换内容" Click="BrowseHomeLibrary" Style="{StaticResource PrimaryButton}" Margin="0,0,0,8"/></WrapPanel>
+    <StackPanel><TextBlock FontSize="26" FontWeight="Bold"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="你的设备，各有精彩"/><Style.Triggers><DataTrigger Binding="{Binding Devices.Managed.Cards.Count}" Value="1"><Setter Property="Text" Value="{Binding Devices.Managed.Cards[0].Alias}"/></DataTrigger><DataTrigger Binding="{Binding Devices.Managed.Cards.Count}" Value="0"><Setter Property="Text" Value="我的设备"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock><TextBlock Text="{Binding HomeDeviceStatus}" Foreground="#748198" Margin="0,6,0,0"/></StackPanel>
+   </DockPanel>
+   <Border x:Name="NoDeviceHome" Padding="20,55" BorderBrush="#CCD6E6" BorderThickness="1" CornerRadius="12" Margin="0,0,0,23">
+    <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Devices.Managed.Cards.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+    <StackPanel HorizontalAlignment="Center">
+     <TextBlock Text="连接你的第一台 MiraBox 设备" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+     <TextBlock Text="连接后确认设备身份与方向，再选择喜欢的内容。" Foreground="#748198" Margin="0,8,0,18"/>
+     <Button Content="先浏览资源" Click="BrowseHomeLibrary" Style="{StaticResource SoftButton}" HorizontalAlignment="Center"/>
+    </StackPanel>
+   </Border>
+   <ItemsControl x:Name="MultiDeviceHome" ItemsSource="{Binding Devices.Managed.Cards}" Margin="0,0,0,20">
+    <ItemsControl.Style><Style TargetType="ItemsControl"><Style.Triggers><DataTrigger Binding="{Binding Devices.Managed.Cards.Count}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding Devices.Managed.Cards.Count}" Value="1"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></ItemsControl.Style>
+    <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+    <ItemsControl.ItemTemplate><DataTemplate><Border Style="{StaticResource SoftCard.Flat}" Margin="0,0,12,12"><StackPanel><DockPanel><TextBlock Text="{Binding Alias}" FontWeight="SemiBold" FontSize="18"/><TextBlock Text="{Binding OutputStatus}" Foreground="#4268EF" DockPanel.Dock="Right"/></DockPanel><TextBlock Text="{Binding PreviewLabel}" Foreground="#748198" Margin="0,8"/><TextBlock Text="{Binding AppliedTheme}" FontSize="16" Margin="0,16" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#748198"/><WrapPanel Margin="0,14,0,0"><Button Content="更换内容" Click="BrowseDeviceLibrary" Style="{StaticResource PrimaryButton}"/><Button Content="停止输出" Command="{Binding StopCommand}" Style="{StaticResource SoftButton}" Margin="8,0,0,0"/></WrapPanel></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
+   </ItemsControl>
+   <Border x:Name="SingleDeviceHome" Background="White" BorderBrush="#E5EAF2" BorderThickness="1" CornerRadius="15" Padding="18,16">
+    <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Devices.Managed.Cards.Count}" Value="1"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+    <StackPanel>
+     <DockPanel Margin="0,0,0,16">
+      <WrapPanel DockPanel.Dock="Right"><Button Content="▭ 横屏" Command="{Binding ShowLandscapeCommand}" Style="{StaticResource ModeButton}"/><Button Content="▯ 竖屏" Command="{Binding ShowPortraitCommand}" Style="{StaticResource ModeButton}"/></WrapPanel>
+      <TextBlock Text="实时画面" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+     </DockPanel>
+     <Border Margin="0,12,0,0">
+      <Border Background="#131C2D" CornerRadius="8" ClipToBounds="True">
+       <scene:PreviewHost AspectRatio="{Binding HomePreviewAspect}" MaxHeight="360" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+        <Border Background="#131C2D" ClipToBounds="True"><scene:SceneView Scene="{Binding HomeScene}" AspectRatioOverride="{Binding HomePreviewAspect}"/></Border>
+       </scene:PreviewHost>
+      </Border>
+     </Border>
+     <Border Margin="0,12,0,0">
+      <DockPanel>
+       <WrapPanel DockPanel.Dock="Right" MaxWidth="380">
+        <Button Content="{Binding Devices.Managed.HomeBackgroundPauseLabel}" Command="{Binding Devices.Managed.PauseHomeVideoCommand}" Visibility="{Binding Devices.Managed.CanPauseHomeVideo, Converter={StaticResource Visible}}" Style="{StaticResource SoftButton}" Margin="0,0,8,8"/>
+        <Button Content="{Binding Usb.VideoPauseLabel}" Command="{Binding Usb.VideoPauseCommand}" Visibility="{Binding Usb.IsVideoRunning, Converter={StaticResource Visible}}" Style="{StaticResource SoftButton}" Margin="0,0,8,8"/>
+        <Button Content="定位资源" Command="{Binding LocateHomeContentCommand}" Style="{StaticResource SoftButton}" Margin="0,0,8,8"/>
+        <Button Content="停止输出" Command="{Binding StopHomeOutputCommand}" Style="{StaticResource SoftButton}" Margin="0,0,0,8"/>
+       </WrapPanel>
+       <StackPanel Margin="0,0,12,0"><TextBlock Text="{Binding NowPlaying}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding HomeVideoPerformanceText}" Foreground="#748198" Visibility="{Binding HomeHasVideoOutput, Converter={StaticResource Visible}}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel>
+      </DockPanel>
+     </Border>
+    </StackPanel>
+   </Border>
+   <WrapPanel Margin="0,22,0,28"><TextBlock Text="快速启动轮播" Foreground="#748198" VerticalAlignment="Center" Margin="0,0,14,0"/><Button Content="轮播管理" Command="{Binding OpenCarouselManagerCommand}" Style="{StaticResource SoftButton}"/></WrapPanel>   <Border Margin="0,0,0,22">
+    <StackPanel>
+     <StackPanel Visibility="{Binding HasHomePins, Converter={StaticResource Visible}}"><TextBlock Text="常用内容" Style="{StaticResource Text.SectionTitle}" Margin="0,0,0,12"/><ItemsControl ItemsSource="{Binding HomePinnedEntries}" ItemTemplate="{StaticResource RecentCard}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl></StackPanel><TextBlock Text="最近使用" Style="{StaticResource Text.SectionTitle}" Margin="0,0,0,14" />
+     <ItemsControl ItemsSource="{Binding HomeRecentEntries}" ItemTemplate="{StaticResource RecentCard}" Visibility="{Binding HomeHasRecent, Converter={StaticResource Visible}}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+     <StackPanel Visibility="{Binding HomeShowDemoRecent, Converter={StaticResource Visible}}"><TextBlock Text="尚无真实使用记录，以下内容仅用于展示布局" Style="{StaticResource Text.Secondary}" Margin="0,0,0,10"/><ItemsControl ItemsSource="{Binding DemoHomeWallpapers}" ItemTemplate="{StaticResource DemoCard}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl></StackPanel>
+    </StackPanel>
+   </Border>
+   <Border>
+    <StackPanel>
+     <TextBlock Text="适合屏幕的推荐内容" Style="{StaticResource Text.SectionTitle}" Margin="0,0,0,14" />
+     <ItemsControl ItemsSource="{Binding HomeRecommendedItems}" Visibility="{Binding HomeHasRecommendations, Converter={StaticResource Visible}}">
+      <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate><DataTemplate><Button Command="{Binding DataContext.OpenHomeRecommendationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Style="{StaticResource SoftButton}" Padding="0" Margin="0,0,14,14" HorizontalContentAlignment="Stretch"><StackPanel><scene:PreviewHost AspectRatio="4"><Border Background="#EDF2F8" CornerRadius="9" ClipToBounds="True"><Image local:AsyncPreviewImage.Uri="{Binding ThumbnailUri}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" /></Border></scene:PreviewHost><TextBlock Text="{Binding Name}" Foreground="{StaticResource Brush.TextSecondary}" Margin="3,7,0,0" TextTrimming="CharacterEllipsis" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate>
+     </ItemsControl>
+     <TextBlock Text="{Binding HomeRecommendedStatus}" Style="{StaticResource Text.Secondary}" Margin="0,8" />
+     <StackPanel Visibility="{Binding HomeShowDemoRecommendations, Converter={StaticResource Visible}}"><TextBlock Text="演示案例 · 连接 D92 Studio 后将替换为最新上线资源" Style="{StaticResource Text.Secondary}" Margin="0,0,0,10"/><ItemsControl ItemsSource="{Binding DemoHomeWallpapers}" ItemTemplate="{StaticResource DemoCard}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl></StackPanel>
+    </StackPanel>
+   </Border>
+   <Expander Header="D92 输出目标" Margin="0,16,0,0">
+    <ComboBox ItemsSource="{Binding Usb.Devices}" SelectedItem="{Binding Usb.SelectedSerial}" IsEnabled="{Binding Usb.CanEdit}" Style="{StaticResource SoftSelector}" Width="220" HorizontalAlignment="Left" Margin="0,10" AutomationProperties.Name="首页目标D92"/>
+   </Expander>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

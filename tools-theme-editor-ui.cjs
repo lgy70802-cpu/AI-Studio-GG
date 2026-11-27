@@ -1,0 +1,32 @@
+const fs=require('fs'),path=require('path'),assert=require('assert/strict');
+const {chromium}=require('playwright');
+(async()=>{
+ const browser=await chromium.connectOverCDP('http://127.0.0.1:9227'),page=browser.contexts()[0].pages().find(p=>p.url().includes('studio.local')&&!p.url().includes('device-render'));
+ const req=(command,payload={})=>page.evaluate(({command,payload})=>new Promise((resolve,reject)=>{const id=crypto.randomUUID(),fn=e=>{if(e.data.id!==id)return;window.chrome.webview.removeEventListener('message',fn);e.data.error?reject(Error(e.data.error)):resolve(e.data.result);};window.chrome.webview.addEventListener('message',fn);window.chrome.webview.postMessage({id,command,...payload});}),{command,payload});
+ const snapshot=await req('library-load'),d=(await req('devices')).devices.find(d=>d.model==='D69');
+ await req('select',{serial:d.serial});await page.reload();await page.waitForTimeout(800);await page.getByRole('button',{name:'创作中心',exact:true}).click();
+ await page.getByRole('button',{name:/新建空白画布/}).click();await page.getByLabel('主题名称',{exact:true}).fill('验收_界面新建');
+ const project=structuredClone(snapshot.themes.find(t=>t.id==='qa-live-theme').editorProject);project.template_id='qa-ui-created';project.name='验收_界面新建';
+ const photo=snapshot.themes.find(t=>t.category==='壁纸'&&t.inLibrary!==false&&!t.deletedAt&&t.imageUrl?.startsWith('https://media.studio.local/'));
+ const file=path.join(process.env.LOCALAPPDATA,'MiraBoxStudio.Next/Library',new URL(photo.imageUrl).pathname.slice(1));
+ project.master.push({id:'image-ui',kind:'image',a:'tl',x:5,y:16,size:25,w:16,h:45,color:'#ffffff',alpha:100,weight:400,fit:'cover',src:'data:image/png;base64,'+fs.readFileSync(file).toString('base64')});
+ const out=path.join(__dirname,'artifacts/theme-qa');fs.writeFileSync(path.join(out,'ui-project.json'),JSON.stringify(project));
+ await page.locator('input[type=file][accept=".json,.d92theme.json"]').setInputFiles(path.join(out,'ui-project.json'));await page.waitForTimeout(500);
+ await page.getByRole('button',{name:'保存',exact:true}).click();await page.waitForTimeout(1200);
+ let saved=(await req('library-load')).themes.find(t=>t.editorProject?.template_id==='qa-ui-created');assert(saved);assert(saved.editorProject.master.find(e=>e.id==='image-ui').src.startsWith('https://media.studio.local/'));assert.equal((await req('devices')).devices.find(x=>x.serial===d.serial).themeId,d.themeId);
+ await page.getByRole('button',{name:'应用',exact:true}).click();await page.waitForTimeout(2500);assert.equal((await req('devices')).devices.find(x=>x.serial===d.serial).themeId,saved.id);
+ await page.getByLabel('主题名称',{exact:true}).fill('验收_界面主题_已修改');await page.getByRole('button',{name:'保存',exact:true}).click();await page.waitForTimeout(1000);
+ saved=(await req('library-load')).themes.find(t=>t.id===saved.id);assert.equal(saved.displayName,'验收_界面主题_已修改');
+ await page.screenshot({path:path.join(out,'editor.png')});
+ // Preview a changed unsaved name; the native host must restore the original at 15 seconds.
+ await page.getByLabel('主题名称',{exact:true}).fill('验收_临时预览_不入库');
+ await page.getByRole('button',{name:'设备预览',exact:true}).click();await page.waitForTimeout(2200);
+ assert.equal((await req('devices')).devices.find(x=>x.serial===d.serial).themeName,'验收_临时预览_不入库');
+ assert(!(await req('library-load')).themes.some(t=>t.displayName==='验收_临时预览_不入库'));
+ await page.waitForTimeout(16000);const restored=(await req('devices')).devices.find(x=>x.serial===d.serial);assert.equal(restored.themeName,saved.displayName);assert(restored.playing);
+ await page.reload();await page.waitForTimeout(800);await page.getByRole('button',{name:'创作中心',exact:true}).click();await page.getByLabel('搜索我的作品').fill(saved.displayName);
+ await page.getByRole('button',{name:'复制副本',exact:true}).click();await page.waitForTimeout(1000);
+ const duplicate=(await req('library-load')).themes.find(t=>t.displayName===saved.displayName+' (副本)');assert(duplicate&&duplicate.id!==saved.id);assert.notEqual(duplicate.editorProject.template_id,saved.editorProject.template_id);
+ await page.getByLabel('搜索我的作品').fill(saved.displayName+' (副本)');await page.getByRole('button',{name:'编辑',exact:true}).click();assert.equal(await page.getByLabel('主题名称',{exact:true}).inputValue(),duplicate.displayName);
+ fs.writeFileSync(path.join(out,'editor-ui.json'),JSON.stringify({savedId:saved.id,duplicateId:duplicate.id,newSave:true,managedImage:true,apply:true,modifyStableId:true,temporaryPreviewRestore:true,duplicateIndependent:true,reopen:true},null,2));console.log('EDITOR_NEW_SAVE_IMAGE_APPLY_MODIFY_PREVIEW_DUPLICATE_REOPEN_PASSED');await browser.close();
+})().catch(e=>{console.error(e);process.exit(1);});

@@ -1,0 +1,45 @@
+using System.Text.Json;
+using MiraBox.App;
+
+var count = 0;
+void Check(bool value, string message) { if (!value) throw new Exception(message); count++; Console.WriteLine("PASS " + message); }
+var list = new StudioPlaylistDefinition("p", "one", false, false, [
+    new("a",10), new("b",20), new("c",30)]);
+var available = new HashSet<string> {"a","b","c"};
+var progress = new StudioPlaylistProgress {Serial="one",PlaylistId="p",Running=true};
+Check(progress.Choose(list,available,1)==0,"new list selects first valid item");
+progress.Commit(list,0);
+progress.Advance(4,true);
+Check(progress.RemainingSeconds==6,"elapsed time deducted");
+progress.Advance(5,false);
+Check(progress.RemainingSeconds==6,"offline time frozen");
+progress.Running=false;
+progress.Advance(5,true);
+Check(progress.RemainingSeconds==6,"paused time frozen");
+progress.Running=true;
+progress.ReconcileDuration(20);
+Check(progress.RemainingSeconds==16,"duration edit preserves elapsed time");
+Check(progress.Choose(list,available,1)==1,"sequential next");
+Check(progress.Choose(list,available,-1)==2,"previous wraps");
+available.Remove("b");
+Check(progress.Choose(list,available,1)==2,"trashed item skipped");
+available.Add("b");
+Check(progress.Choose(list,available,1)==1,"restored ID becomes eligible");
+var reordered = list with {Items=[new("c",30),new("a",10),new("b",20)]};
+Check(progress.Choose(reordered,available,1)==2,"reordering follows stable current theme ID");
+var random = list with {Shuffle=true};
+Check(progress.Choose(random,available,1,_=>0)!=0,"random avoids immediate repetition");
+Check(progress.Choose(random,new HashSet<string>{"a"},1,_=>0)==0,"single-item random supported");
+Check(progress.Choose(list,new HashSet<string>(),1)==-1,"all missing items return no candidate");
+progress.Advance(100,true);
+Check(progress.RemainingSeconds==0,"remaining duration never negative");
+progress.Commit(list,1);
+progress.Advance(3,true);
+var restored = JsonSerializer.Deserialize<StudioPlaylistProgress>(JsonSerializer.Serialize(progress))!;
+Check(restored.RemainingSeconds==17&&restored.Running&&restored.ThemeId=="b","restart roundtrip preserves progress and intent");
+var other = new StudioPlaylistProgress {Serial="two",Running=true};
+other.Commit(list,2);
+other.Advance(1,true);
+Check(progress.RemainingSeconds==17&&other.RemainingSeconds==29,"device progress independent");
+Check(StudioPlaylistProgress.Duration(0)==10&&StudioPlaylistProgress.Duration(90000)==86400&&StudioPlaylistProgress.Duration(double.NaN)==30,"duration limits match V67");
+Console.WriteLine(count+" checks passed");

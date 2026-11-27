@@ -1,0 +1,26 @@
+name: Windows build and offline checks
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: d-studio/package-lock.json
+      - run: npm --prefix d-studio ci
+      - run: npm --prefix d-studio run lint
+      - run: ./build.ps1
+        shell: pwsh
+      - name: Offline checks without USB access
+        shell: pwsh
+        run: |
+          foreach ($name in @('LibraryChecks','PlaylistChecks','ScheduleChecks','ScheduleHostChecks','ThemeHostChecks','PackageChecks','DisplayPowerChecks','UpdateChecks')) {
+            dotnet run --project "tests/$name" -c Release
+            if ($LASTEXITCODE) { throw "Failed: $name" }
+          }

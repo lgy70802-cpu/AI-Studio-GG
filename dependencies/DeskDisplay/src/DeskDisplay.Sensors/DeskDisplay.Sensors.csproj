@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DeskDisplay.Core/DeskDisplay.Core.csproj" />
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <InternalsVisibleTo Include="DeskDisplay.DisplayTests" />
+  </ItemGroup>
+</Project>
