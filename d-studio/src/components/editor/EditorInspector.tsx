@@ -527,7 +527,24 @@ const PLUGIN_CONFIG_FIELD_META: Record<string, PluginFieldMeta> = {
   item1: { label: '待办事项 1', type: 'text' },
   item2: { label: '待办事项 2', type: 'text' },
   item3: { label: '待办事项 3', type: 'text' },
-  fishCount: { label: '热带鱼数量', type: 'number', min: 1, max: 12, step: 1, unit: '条' },
+  songTitle: { label: '曲目标题', type: 'text' },
+  spectrumBars: { label: '频谱柱数量', type: 'number', min: 8, max: 32, step: 2, unit: '条' },
+  fishCount: { label: '热带鱼数量', type: 'number', min: 1, max: 14, step: 1, unit: '条' },
+  causticsIntensity: { label: '水流焦散强度', type: 'number', min: 0.2, max: 1.0, step: 0.1 },
+  bubbleSpeed: { label: '气泡速率', type: 'number', min: 0.5, max: 2.0, step: 0.1, unit: 'x' },
+  showClock: { label: '显示悬浮时钟', type: 'boolean' },
+  colorHue: {
+    label: '辉光管灯丝色温',
+    type: 'select',
+    options: [
+      { value: 'amber', label: '经典琥珀' },
+      { value: 'cyan', label: '赛博青蓝' },
+      { value: 'green', label: '荧光翠绿' },
+      { value: 'white', label: '纯净冷白' },
+    ],
+  },
+  showSeconds: { label: '显示秒数管', type: 'boolean' },
+  showDate: { label: '显示底部日期', type: 'boolean' },
   bubbleDensity: {
     label: '气泡密度',
     type: 'select',
@@ -538,6 +555,140 @@ const PLUGIN_CONFIG_FIELD_META: Record<string, PluginFieldMeta> = {
     ],
   },
   petName: { label: '萌宠昵称', type: 'text' },
+  petSpecies: {
+    label: '宠物形态',
+    type: 'select',
+    options: [
+      { value: 'mochi', label: '赛博猫耳' },
+      { value: 'pixel-bot', label: '像素机甲' },
+      { value: 'shiba', label: '柴犬伙伴' },
+    ],
+  },
+  flameIntensity: {
+    label: '火焰强度',
+    type: 'select',
+    options: [
+      { value: 'low', label: '微火' },
+      { value: 'medium', label: '适中' },
+      { value: 'high', label: '旺火' },
+    ],
+  },
+  emberDensity: {
+    label: '余烬密度',
+    type: 'select',
+    options: [
+      { value: 'low', label: '稀疏' },
+      { value: 'medium', label: '适中' },
+      { value: 'high', label: '密集' },
+    ],
+  },
+  showSoundHint: { label: '显示白噪音提示', type: 'boolean' },
+  bonsaiSpecies: {
+    label: '盆栽品种',
+    type: 'select',
+    options: [
+      { value: 'pine', label: '青松微景' },
+      { value: 'succulent', label: '玉露多肉' },
+      { value: 'sakura', label: '春樱盆景' },
+    ],
+  },
+  growthDays: { label: '养护天数', type: 'number', min: 1, max: 999, step: 1, unit: '天' },
+  sunlightTone: {
+    label: '光照色温',
+    type: 'select',
+    options: [
+      { value: 'warm', label: '晨光暖阳' },
+      { value: 'cool', label: '月夜冷光' },
+      { value: 'mist', label: '森林微雾' },
+    ],
+  },
+  flipShellStyle: {
+    label: '机械外壳材质',
+    type: 'select',
+    options: [
+      { value: 'obsidian', label: '曜石炭黑' },
+      { value: 'warmwood', label: '暖木胡桃' },
+      { value: 'titanium', label: '钛银拉丝' },
+    ],
+  },
+  vuBacklight: {
+    label: '表盘背光色',
+    type: 'select',
+    options: [
+      { value: 'warm-amber', label: '经典暖黄' },
+      { value: 'emerald', label: '示波翠绿' },
+      { value: 'ice-blue', label: '冰蓝冷光' },
+    ],
+  },
+  vuSensitivity: {
+    label: '指针灵敏度',
+    type: 'select',
+    options: [
+      { value: 'smooth', label: '舒缓' },
+      { value: 'balanced', label: '均衡' },
+      { value: 'punchy', label: '灵敏' },
+    ],
+  },
+  deckLabel: { label: '电平表标签', type: 'text' },
+  cassetteShell: {
+    label: '磁带外壳色',
+    type: 'select',
+    options: [
+      { value: 'smoke', label: '烟熏透黑' },
+      { value: 'amber', label: '琥珀复古' },
+      { value: 'indigo', label: '靛蓝透明' },
+    ],
+  },
+  zodiacSign: {
+    label: '星座选择',
+    type: 'select',
+    options: [
+      { value: 'aries', label: '白羊座' },
+      { value: 'taurus', label: '金牛座' },
+      { value: 'gemini', label: '双子座' },
+      { value: 'cancer', label: '巨蟹座' },
+      { value: 'leo', label: '狮子座' },
+      { value: 'virgo', label: '处女座' },
+      { value: 'libra', label: '天秤座' },
+      { value: 'scorpio', label: '天蝎座' },
+      { value: 'sagittarius', label: '射手座' },
+      { value: 'capricorn', label: '摩羯座' },
+      { value: 'aquarius', label: '水瓶座' },
+      { value: 'pisces', label: '双鱼座' },
+    ],
+  },
+  showConstellationGlow: { label: '显示星图光晕', type: 'boolean' },
+  parcelName: { label: '包裹备注名称', type: 'text' },
+  carrier: { label: '承运商', type: 'text' },
+  parcelStage: {
+    label: '物流进度节点',
+    type: 'select',
+    options: [
+      { value: 'collected', label: '已揽收' },
+      { value: 'transit', label: '干线运输' },
+      { value: 'delivering', label: '派送中' },
+      { value: 'delivered', label: '已签收' },
+    ],
+  },
+  milestoneTitle: { label: '纪念日标题', type: 'text' },
+  targetDays: { label: '目标天数', type: 'number', min: 0, max: 9999, step: 1, unit: '天' },
+  countMode: {
+    label: '计数方式',
+    type: 'select',
+    options: [
+      { value: 'countdown', label: '倒数天数' },
+      { value: 'countup', label: '正数纪念' },
+    ],
+  },
+  unitMode: {
+    label: '速率单位',
+    type: 'select',
+    options: [
+      { value: 'Mbps', label: 'Mbps' },
+      { value: 'MB/s', label: 'MB/s' },
+    ],
+  },
+  showPingChart: { label: '显示带宽波形图', type: 'boolean' },
   mood: {
     label: '情绪状态',
     type: 'select',
@@ -2794,6 +2945,216 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                           onMutateSelected((el) => ({ ...el, city: e.target.value } as EditorElement))
                         }
                         className="mt-1 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'clock-widget' && (
+                    <div className="space-y-1.5">
+                      {[
+                        { key: 'showSeconds' as const, label: '显示秒数' },
+                        { key: 'showDate' as const, label: '显示日期星期' },
+                        { key: 'use24Hour' as const, label: '24 小时制' },
+                      ].map((opt) => {
+                        const checked = (single as WidgetElement)[opt.key] !== false;
+                        return (
+                          <label
+                            key={opt.key}
+                            className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px]"
+                          >
+                            <span className="text-[#56526B]">{opt.label}</span>
+                            <input
+                              type="checkbox"
+                              className="accent-[#5E45F8]"
+                              checked={checked}
+                              onChange={(e) =>
+                                onMutateSelected((el) => ({
+                                  ...el,
+                                  [opt.key]: e.target.checked,
+                                } as EditorElement))
+                              }
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'telemetry-bar' && (
+                    <div className="space-y-2">
+                      {[
+                        { key: 'showTemp' as const, label: '显示核心温度 (°C)' },
+                        { key: 'showMemory' as const, label: '显示内存占用' },
+                      ].map((opt) => {
+                        const checked = (single as WidgetElement)[opt.key] !== false;
+                        return (
+                          <label
+                            key={opt.key}
+                            className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px]"
+                          >
+                            <span className="text-[#56526B]">{opt.label}</span>
+                            <input
+                              type="checkbox"
+                              className="accent-[#5E45F8]"
+                              checked={checked}
+                              onChange={(e) =>
+                                onMutateSelected((el) => ({
+                                  ...el,
+                                  [opt.key]: e.target.checked,
+                                } as EditorElement))
+                              }
+                            />
+                          </label>
+                        );
+                      })}
+                      <div>
+                        <span className="text-[11px] text-[#56526B]">采集刷新频率</span>
+                        <div className="mt-1 grid grid-cols-3 gap-1">
+                          {[1, 2, 5].map((sec) => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => ({
+                                  ...el,
+                                  refreshSeconds: sec,
+                                } as EditorElement))
+                              }
+                              className={`rounded-lg py-1 font-mono-tabular text-[11px] font-semibold ${
+                                ((single as WidgetElement).refreshSeconds ?? 2) === sec
+                                  ? 'bg-[#5E45F8] text-white'
+                                  : 'bg-[#F5F4FA] text-[#56526B]'
+                              }`}
+                            >
+                              {sec}s
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'audio-rhythm' && (
+                    <div className="space-y-2">
+                      <label className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px]">
+                        <span className="text-[#56526B]">显示正在播放曲目</span>
+                        <input
+                          type="checkbox"
+                          className="accent-[#5E45F8]"
+                          checked={(single as WidgetElement).showTrackName !== false}
+                          onChange={(e) =>
+                            onMutateSelected((el) => ({
+                              ...el,
+                              showTrackName: e.target.checked,
+                            } as EditorElement))
+                          }
+                        />
+                      </label>
+                      <div>
+                        <label className="text-[11px] text-[#56526B]">曲目胶囊文案</label>
+                        <input
+                          type="text"
+                          value={(single as WidgetElement).trackName ?? 'Midnight Lo-Fi · 小屏宝PixBuddy'}
+                          onChange={(e) =>
+                            onMutateSelected((el) => ({
+                              ...el,
+                              trackName: e.target.value,
+                            } as EditorElement))
+                          }
+                          className="mt-1 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                        />
+                      </div>
+                      <InlineSlider
+                        label="频谱柱数"
+                        min={8}
+                        max={28}
+                        step={2}
+                        value={(single as WidgetElement).barCount ?? 20}
+                        displayValue={`${(single as WidgetElement).barCount ?? 20} 根`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, barCount: val } as EditorElement))
+                        }
+                      />
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'pomodoro-widget' && (
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-[11px] text-[#56526B]">专注时长</span>
+                        <div className="mt-1 grid grid-cols-3 gap-1">
+                          {[15, 25, 45].map((mins) => (
+                            <button
+                              key={mins}
+                              type="button"
+                              onClick={() =>
+                                onMutateSelected((el) => ({
+                                  ...el,
+                                  focusMinutes: mins,
+                                } as EditorElement))
+                              }
+                              className={`rounded-lg py-1 font-mono-tabular text-[11px] font-semibold ${
+                                ((single as WidgetElement).focusMinutes ?? 25) === mins
+                                  ? 'bg-[#5E45F8] text-white'
+                                  : 'bg-[#F5F4FA] text-[#56526B]'
+                              }`}
+                            >
+                              {mins} 分钟
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <InlineSlider
+                        label="休息时长"
+                        min={3}
+                        max={20}
+                        value={(single as WidgetElement).breakMinutes ?? 5}
+                        displayValue={`${(single as WidgetElement).breakMinutes ?? 5} 分钟`}
+                        onChange={(val) =>
+                          onMutateSelected((el) => ({ ...el, breakMinutes: val } as EditorElement))
+                        }
+                      />
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'weather-capsule' && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[11px] text-[#56526B]">监测城市</label>
+                        <input
+                          type="text"
+                          value={(single as WidgetElement).city || '上海'}
+                          onChange={(e) =>
+                            onMutateSelected((el) => ({ ...el, city: e.target.value } as EditorElement))
+                          }
+                          className="mt-1 w-full rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
+                        />
+                      </div>
+                      <label className="flex items-center justify-between rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px]">
+                        <span className="text-[#56526B]">显示空气质量 (AQI)</span>
+                        <input
+                          type="checkbox"
+                          className="accent-[#5E45F8]"
+                          checked={(single as WidgetElement).showAqi !== false}
+                          onChange={(e) =>
+                            onMutateSelected((el) => ({
+                              ...el,
+                              showAqi: e.target.checked,
+                            } as EditorElement))
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
+                  {(single as WidgetElement).widgetType === 'sticky-note' && (
+                    <div>
+                      <label className="text-[11px] text-[#56526B]">副屏常驻便签文案</label>
+                      <textarea
+                        rows={3}
+                        maxLength={80}
+                        value={(single as WidgetElement).noteText ?? '完成 D92 视觉方案评审 · 19:00'}
+                        onChange={(e) =>
+                          onMutateSelected((el) => ({
+                            ...el,
+                            noteText: e.target.value,
+                          } as EditorElement))
+                        }
+                        className="mt-1 w-full resize-none rounded-lg border border-[#E6E4F2] bg-[#F8F7FC] px-2.5 py-1.5 text-[11.5px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
                       />
                     </div>
                   )}

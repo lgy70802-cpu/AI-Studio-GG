@@ -1,0 +1,23 @@
+{
+  "Name": "PixBuddy 示例时钟",
+  "Version": "1.0.0",
+  "Author": "PixBuddy",
+  "Description": "按设备尺寸绘制本地时间",
+  "PixBuddyApiVersion": 1,
+  "CodePath": "index.html",
+  "Actions": [
+    {
+      "UUID": "com.pixbuddy.example.clock.display",
+      "Controllers": [
+        "SecondaryScreen"
+      ],
+      "Settings": {
+        "ActionGeometry": {
+          "width": 1920,
+          "height": 462
+        },
+        "hour12": false
+      }
+    }
+  ]
+}

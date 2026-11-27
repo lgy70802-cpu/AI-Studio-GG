@@ -1,3 +1,4 @@
+using MiraBox.Core;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -104,6 +105,7 @@ public sealed partial class StudioWindow : Window
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             closing = true;
             shutdown.Cancel();
+            pluginPreviewWindow?.Close();
             Microsoft.Win32.SystemEvents.PowerModeChanged -= OnSystemPower;
             reconnect.Stop();
             playlistTimer.Stop();
@@ -190,6 +192,13 @@ public sealed partial class StudioWindow : Window
     }
     async Task StopCore(string serial)
     {
+        if (pluginOutputs.Remove(serial, out var plugin))
+        {
+            plugin.Dispose();
+            if (saved.TryGetValue(serial, out var device) && themePreviews.Remove(serial, out var snapshot))
+                try { File.WriteAllBytes(ImagePath(device), Convert.FromBase64String(snapshot.Split(',', 2)[1])); }
+                catch (IOException ex) { Log(new { serial, error = ex.Message }); }
+        }
         themeErrors.Remove(serial);
         if (themeSessions.Remove(serial, out var themeSession))
         {
@@ -211,7 +220,20 @@ public sealed partial class StudioWindow : Window
         byte[] jpeg;
         StudioThemeRenderer? themeRenderer = null;
         string? themePreview = null;
-        if (device.ThemeFile != null)
+        WoodlandRuntime? pluginRuntime = null;
+        if (device.ThemeId?.StartsWith(PluginPrefix, StringComparison.Ordinal) == true)
+        {
+            pluginRuntime = OpenPlugin(pluginHost, FindPlugin(device.ThemeId[PluginPrefix.Length..]), device);
+            try
+            {
+                await pluginRuntime.Ready.WaitAsync(TimeSpan.FromSeconds(20));
+                var frame = FitPlugin(pluginRuntime.Frame!, device);
+                jpeg = D92StaticImage.Encode(rotation, frame, device.Model);
+                File.WriteAllBytes(ImagePath(device), Convert.FromBase64String(EncodePreview(frame).Split(',', 2)[1]));
+            }
+            catch { pluginRuntime.Dispose(); throw; }
+        }
+        else if (device.ThemeFile != null)
         {
             var rendered = await OpenTheme(device);
             themeRenderer = rendered.Renderer;
@@ -229,7 +251,8 @@ public sealed partial class StudioWindow : Window
             bitmap.Freeze();
             jpeg = D92StaticImage.Encode(rotation, bitmap, device.Model);
         }
-        await StopCore(device.Serial);
+        try { await StopCore(device.Serial); }
+        catch { pluginRuntime?.Dispose(); throw; }
         themePreviews.Remove(device.Serial);
         var output = new D92StaticOutput(device.Serial, rotation, jpeg, false, device.Model, device.Model == "D69");
         output.DisplayBrightness = device.Brightness; output.DisplayStandby = device.ManualStandby;
@@ -242,6 +265,24 @@ public sealed partial class StudioWindow : Window
             themeSessions[device.Serial] = new(themeRenderer, output, device, fps);
             themePreviews[device.Serial] = themePreview!;
             File.WriteAllBytes(ImagePath(device), Convert.FromBase64String(themePreview![(themePreview!.IndexOf(',') + 1)..]));
+        }
+        if (pluginRuntime != null)
+        {
+            pluginOutputs[device.Serial] = pluginRuntime;
+            output.LiveFramesPerSecond = 8;
+            output.SubmitStill(jpeg, device.ThemeName, "clock");
+            pluginRuntime.FrameChanged += () =>
+            {
+                try
+                {
+                    if (pluginRuntime.Error is { } error) { themeErrors[device.Serial] = error; return; }
+                    var frame = FitPlugin(pluginRuntime.Frame!, device);
+                    themeErrors.Remove(device.Serial);
+                    output.SubmitStill(D92StaticImage.Encode(rotation, frame, device.Model), device.ThemeName, "clock");
+                    themePreviews[device.Serial] = EncodePreview(frame);
+                }
+                catch (Exception ex) { themeErrors[device.Serial] = ex.Message; }
+            };
         }
         var firstWrite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         output.Diagnostic += diagnostic =>
@@ -458,6 +499,17 @@ public sealed partial class StudioWindow : Window
                     Save();
                     result = true;
                 }
+            }
+            else if (command is "craft-preview" or "craft-settings" or "craft-configure" or "craft-apply")
+                result = await CraftCommand(command, message, message.TryGetProperty("serial", out var craftSerial) &&
+                    detected.Any(d => d.SerialNumber == craftSerial.GetString()));
+            else if (command == "craft-list") result = new CraftPluginStore(Path.Combine(dataRoot, "Plugins")).Entries;
+            else if (command == "craft-import")
+            {
+                var picker = new Microsoft.Win32.OpenFolderDialog { Title = "选择 Craft 或小屏宝插件文件夹", Multiselect = false };
+                result = picker.ShowDialog(this) == true
+                    ? await Task.Run(() => new CraftPluginStore(Path.Combine(dataRoot, "Plugins")).Import(picker.FolderName, DateTimeOffset.UtcNow))
+                    : null;
             }
             else if (command == "library-load")
             {

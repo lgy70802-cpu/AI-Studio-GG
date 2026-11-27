@@ -39,7 +39,7 @@ const { connect } = require('./tools-theme-common.cjs');
       { bg: { kind: 'color' }, master: [], layouts: [{ size: [0, 1280] }] },
       { bg: { kind: 'color' }, master: [], layouts: [{ size: [480, 1280], elements: {} }] },
     ]) {
-      await page.locator('input[type=file][accept=".json,.d92theme.json"]').setInputFiles({
+      await page.locator('input[type=file][accept*=".json"]').setInputFiles({
         name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(invalid)),
       });
       await page.waitForTimeout(100);
@@ -109,7 +109,7 @@ const { connect } = require('./tools-theme-common.cjs');
     await page.getByRole('button', { name: '保存', exact: true }).click();
     await page.waitForTimeout(600);
     check((await req('library-load')).themes.some(theme => theme.displayName === '验收_保存期间的新修改'), 'concurrent edits can subsequently be saved');
-    await page.locator('input[type=file][accept=".json,.d92theme.json"]').setInputFiles({
+    await page.locator('input[type=file][accept*=".json"]').setInputFiles({
       name: 'compatible.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
         name: '验收_兼容结构导入', bg: { kind: 'color', color: '#ffffff' },
         master: [{ id: 'minimal-text', kind: 'text', a: 'mc', text: '兼容导入' }],

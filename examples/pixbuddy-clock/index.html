@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>PixBuddy Example Clock</title>
+<canvas id="clock"></canvas>
+<script>
+  const canvas = document.querySelector('#clock');
+  const context = canvas.getContext('2d');
+  window.addEventListener('pixbuddy-start', ({ detail }) => {
+    canvas.width = detail.ActionGeometry.width;
+    canvas.height = detail.ActionGeometry.height;
+    const draw = () => {
+      const { width, height } = canvas;
+      context.fillStyle = '#201642';
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = '#ffffff';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.font = `bold ${Math.floor(Math.min(width / 7, height * 0.5))}px sans-serif`;
+      context.fillText(new Date().toLocaleTimeString('en-GB', { hour12: detail.hour12 }), width / 2, height / 2);
+      window.pixBuddy.submitFrame(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    draw();
+    setInterval(draw, 1000);
+  }, { once: true });
+</script>
+</html>

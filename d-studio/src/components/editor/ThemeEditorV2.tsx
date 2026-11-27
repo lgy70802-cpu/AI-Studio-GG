@@ -17,7 +17,6 @@ import {
   FolderPlus,
   Group,
   HelpCircle,
-  Image as ImageIcon,
   Layers,
   Lock,
   MonitorPlay,
@@ -35,7 +34,6 @@ import {
   Shield,
   Sparkles,
   Trash2,
-  Type,
   Undo2,
   Ungroup,
   Unlock,
@@ -64,6 +62,7 @@ import {
   readVideoDimensions,
   reflowElementsForSize,
   specLabelFromSize,
+  specMatchesDeviceModel,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
 import {
@@ -300,20 +299,16 @@ function renderRailIcon(id: EditorRailTab) {
       return <Sparkles className="h-4 w-4" />;
     case 'assets':
       return <Copy className="h-4 w-4" />;
-    case 'text':
-      return <Type className="h-4 w-4" />;
-    case 'images':
-      return <ImageIcon className="h-4 w-4" />;
     case 'time':
       return <Clock className="h-4 w-4" />;
+    case 'background':
+      return <Palette className="h-4 w-4" />;
     case 'motion':
       return <Activity className="h-4 w-4" />;
     case 'widgets':
       return <FolderPlus className="h-4 w-4" />;
     case 'plugins':
       return <Puzzle className="h-4 w-4" />;
-    case 'background':
-      return <Palette className="h-4 w-4" />;
     case 'layers':
       return <Layers className="h-4 w-4" />;
   }
@@ -441,6 +436,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   const currentLayout = project.layouts[layoutIndex] ?? project.layouts[0];
   const canvasPxW = currentLayout?.size[0] ?? 1920;
   const canvasPxH = currentLayout?.size[1] ?? 462;
+  const exportSpec = EDITOR_DEVICE_SPECS.find(spec => spec.size[0] === canvasPxW && spec.size[1] === canvasPxH);
+  const exportExtension = exportSpec ? `${exportSpec.id.startsWith('d69') ? 'd69' : 'd92'}theme.json` : 'pixbuddytheme.json';
   const effectiveZoom = zoomMode === 'fit' ? fitZoom : zoomMode;
   const isOffline = cloudResourceAdapter.isOfflineSimulated();
 
@@ -2706,9 +2703,15 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   useEffect(() => {
     const knownSpec = EDITOR_DEVICE_SPECS.find(spec => spec.size[0] === canvasPxW && spec.size[1] === canvasPxH);
     if (!knownSpec || availableSpecs.some(spec => spec.id === knownSpec.id)) return;
-    const preferred = availableSpecs.find(spec => spec.deviceModel.startsWith(activeDevice.model) &&
-      (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')) ?? availableSpecs[0];
-    handleSwitchDeviceSpec(preferred.size);
+    const preferred =
+      availableSpecs.find(
+        (spec) =>
+          specMatchesDeviceModel(spec, activeDevice.model) &&
+          (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')
+      ) ?? availableSpecs[0];
+    if (preferred) {
+      handleSwitchDeviceSpec(preferred.size);
+    }
   }, [specKey, canvasPxW, canvasPxH]);
 
   const singleSelected = selectedElements.length === 1 ? selectedElements[0] : null;
@@ -2738,7 +2741,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       <input
         ref={jsonImportRef}
         type="file"
-        accept=".json,.d92theme.json"
+        accept=".json,.d69theme.json,.d92theme.json,.pixbuddytheme.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -3045,14 +3048,14 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                     });
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
-                    a.download = `${project.name || 'd92-theme'}.d92theme.json`;
+                    a.download = `${project.name || 'PixBuddy-theme'}.${exportExtension}`;
                     a.click();
                     onNotify('已导出版本化主题工程 JSON');
                   }}
                   className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[12px] font-medium text-[#1A172B] hover:bg-[#EFEBFD]"
                 >
                   <Download className="h-3.5 w-3.5 text-[#5E45F8]" />
-                  <span>导出 .d92theme.json</span>
+                  <span>导出 .{exportExtension}</span>
                 </button>
                 <button
                   type="button"
@@ -3214,33 +3217,75 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         {/* ZONE B: Left 1st-Level Navigation Rail (64px) */}
         <nav
           aria-label="主题编辑器一级工具栏"
-          className="flex w-[64px] shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-[#E6E4F2] bg-white/92 py-2 backdrop-blur-xl studio-scroll"
+          className="flex w-[64px] shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-[#E6E4F2] bg-white/92 py-2.5 backdrop-blur-xl studio-scroll"
         >
-          {EDITOR_RAIL_TABS.map((tab) => {
-            const active = activeRailTab === tab.id && !leftCollapsed;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  if (activeRailTab === tab.id) {
-                    setLeftCollapsed((c) => !c);
-                  } else {
-                    setActiveRailTab(tab.id);
-                    setLeftCollapsed(false);
-                  }
-                }}
-                className={`flex w-[52px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 transition-all ${
-                  active
-                    ? 'bg-gradient-to-b from-[#6A52FF] to-[#563CEB] text-white shadow-[0_6px_14px_rgba(94,69,248,0.28)]'
-                    : 'text-[#6B6880] hover:bg-[#EFEBFD]/70 hover:text-[#1A172B]'
-                }`}
-              >
-                {renderRailIcon(tab.id)}
-                <span className="text-[10.5px] font-semibold leading-tight">{tab.label}</span>
-              </button>
-            );
-          })}
+          <div className="flex w-full flex-col items-center gap-1">
+            {(['quick', 'core', 'extend'] as const).map((groupKey, gIdx) => {
+              const items = EDITOR_RAIL_TABS.filter((t) => t.group === groupKey);
+              return (
+                <React.Fragment key={groupKey}>
+                  {gIdx > 0 && (
+                    <div className="my-1 h-px w-7 shrink-0 bg-[#E6E4F2]" aria-hidden="true" />
+                  )}
+                  {items.map((tab) => {
+                    const active = activeRailTab === tab.id && !leftCollapsed;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        title={tab.label}
+                        onClick={() => {
+                          if (activeRailTab === tab.id) {
+                            setLeftCollapsed((c) => !c);
+                          } else {
+                            setActiveRailTab(tab.id);
+                            setLeftCollapsed(false);
+                          }
+                        }}
+                        className={`flex w-[52px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 transition-all ${
+                          active
+                            ? 'bg-gradient-to-b from-[#6A52FF] to-[#563CEB] text-white shadow-[0_6px_14px_rgba(94,69,248,0.28)]'
+                            : 'text-[#6B6880] hover:bg-[#EFEBFD]/70 hover:text-[#1A172B]'
+                        }`}
+                      >
+                        {renderRailIcon(tab.id)}
+                        <span className="text-[10.5px] font-semibold leading-tight">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <div className="mt-2 flex w-full shrink-0 flex-col items-center gap-1 pt-2 border-t border-[#E6E4F2]">
+            {EDITOR_RAIL_TABS.filter((t) => t.group === 'structure').map((tab) => {
+              const active = activeRailTab === tab.id && !leftCollapsed;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  title={tab.label}
+                  onClick={() => {
+                    if (activeRailTab === tab.id) {
+                      setLeftCollapsed((c) => !c);
+                    } else {
+                      setActiveRailTab(tab.id);
+                      setLeftCollapsed(false);
+                    }
+                  }}
+                  className={`flex w-[52px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 transition-all ${
+                    active
+                      ? 'bg-gradient-to-b from-[#6A52FF] to-[#563CEB] text-white shadow-[0_6px_14px_rgba(94,69,248,0.28)]'
+                      : 'text-[#6B6880] hover:bg-[#EFEBFD]/70 hover:text-[#1A172B]'
+                  }`}
+                >
+                  {renderRailIcon(tab.id)}
+                  <span className="text-[10.5px] font-semibold leading-tight">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
         {/* ZONE C: Left Secondary Panel (300px, collapsible) */}

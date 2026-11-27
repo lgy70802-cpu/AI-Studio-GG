@@ -21,6 +21,37 @@ import {
   PLUGIN_CAPABILITY_REGISTRY,
 } from '../../data/editorCatalog';
 import {
+  CraftAquariumWidget,
+  CraftLyricsWidget,
+  CraftNixieClockWidget,
+  CraftStocksWidget,
+  NixieColorHue,
+} from '../crafts/CraftWidgets';
+import {
+  BonsaiSpecies,
+  BonsaiSunlight,
+  CassetteShellColor,
+  CraftBonsaiWidget,
+  CraftCampfireWidget,
+  CraftCassetteWidget,
+  CraftCountdownWidget,
+  CraftCyberPetWidget,
+  CraftFlipClockWidget,
+  CraftNetSpeedWidget,
+  CraftParcelWidget,
+  CraftVuMeterWidget,
+  CraftZodiacWidget,
+  CyberPetMood,
+  CyberPetSpecies,
+  FlipShellStyle,
+  MilestoneMode,
+  NetUnitMode,
+  ParcelStage,
+  VuBacklightHue,
+  VuSensitivity,
+  ZodiacSignKey,
+} from '../crafts/ExtendedCraftWidgets';
+import {
   AnchorPoint,
   BgConfig,
   ClockElement,
@@ -579,6 +610,246 @@ const MotionNode: React.FC<{ el: MotionElement; playMotion: boolean }> = ({ el, 
     );
   }
 
+  if (el.effect === 'meteor') {
+    const streakCount = Math.max(3, Math.min(9, Math.round(count / 2)));
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        {Array.from({ length: streakCount }, (_, idx) => {
+          const top = `${((idx * 29 + 6) % 72) - 5}%`;
+          const left = `${((idx * 37 + 12) % 78) - 8}%`;
+          const len = 18 + (idx % 3) * 8;
+          const delay = `${((idx * 0.55) % 2.6).toFixed(2)}s`;
+          const stepDur = (Number(dur) * 0.85 + (idx % 3) * 0.45).toFixed(2);
+          return (
+            <div
+              key={idx}
+              className="absolute flex items-center justify-end rounded-full"
+              style={{
+                top,
+                left,
+                width: `${len}cqw`,
+                height: '0.9cqmin',
+                background: `linear-gradient(90deg, transparent 0%, ${c2}66 55%, ${c1} 100%)`,
+                transform: 'rotate(-28deg)',
+                animation: playMotion ? `teMeteor ${stepDur}s ease-in ${delay} infinite` : undefined,
+              }}
+            >
+              <span
+                className="rounded-full"
+                style={{
+                  width: '1.6cqmin',
+                  height: '1.6cqmin',
+                  backgroundColor: c1,
+                  boxShadow: `0 0 2.5cqmin ${c1}, 0 0 4.5cqmin ${c2}`,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (el.effect === 'matrix-rain') {
+    const colCount = Math.max(6, Math.min(18, count + 2));
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        {Array.from({ length: colCount }, (_, idx) => {
+          const left = `${((idx * 100) / colCount + 2).toFixed(1)}%`;
+          const hPct = 28 + (idx % 4) * 12;
+          const delay = `${((idx * 0.37) % 2.4).toFixed(2)}s`;
+          const stepDur = (Number(dur) * 0.78 + (idx % 4) * 0.38).toFixed(2);
+          return (
+            <div
+              key={idx}
+              className="absolute top-0 flex flex-col items-center justify-end rounded-full"
+              style={{
+                left,
+                width: '0.85cqmin',
+                height: `${hPct}%`,
+                background: `linear-gradient(180deg, transparent 0%, ${c2}55 58%, ${c1} 100%)`,
+                animation: playMotion ? `teRainDrop ${stepDur}s linear ${delay} infinite` : undefined,
+              }}
+            >
+              <span
+                className="rounded-full"
+                style={{
+                  width: '1.35cqmin',
+                  height: '1.35cqmin',
+                  backgroundColor: '#FFFFFF',
+                  boxShadow: `0 0 2cqmin ${c1}`,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (el.effect === 'scanline') {
+    return (
+      <div
+        className="relative h-full w-full overflow-hidden"
+        style={{
+          backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 3px, ${c2}1c 3px, ${c2}1c 4px)`,
+        }}
+      >
+        <div
+          className="absolute inset-x-0"
+          style={{
+            top: '44%',
+            height: '2.2cqmin',
+            background: `linear-gradient(180deg, transparent 0%, ${c1}ee 50%, transparent 100%)`,
+            boxShadow: `0 0 4cqmin ${c1}, 0 0 8cqmin ${c2}`,
+            animation: playMotion ? `teScanSweep ${(Number(dur) * 1.1).toFixed(2)}s linear infinite` : undefined,
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (el.effect === 'ripple') {
+    const ringCount = 3;
+    return (
+      <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+        {Array.from({ length: ringCount }, (_, idx) => {
+          const delay = `${((Number(dur) / ringCount) * idx).toFixed(2)}s`;
+          const pct = 52 + idx * 14;
+          return (
+            <div
+              key={idx}
+              className="absolute aspect-square rounded-full border-[0.7cqmin]"
+              style={{
+                height: `${pct}%`,
+                maxWidth: `${pct}%`,
+                borderColor: idx % 2 === 0 ? c1 : c2,
+                boxShadow: `0 0 2.5cqmin ${c1}66`,
+                animation: playMotion ? `teRippleOut ${dur}s ease-out ${delay} infinite` : undefined,
+              }}
+            />
+          );
+        })}
+        <span
+          className="h-[2.4cqmin] w-[2.4cqmin] rounded-full"
+          style={{ backgroundColor: c1, boxShadow: `0 0 3cqmin ${c1}` }}
+        />
+      </div>
+    );
+  }
+
+  if (el.effect === 'aurora-ribbon') {
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        <div
+          className="absolute -inset-x-[20%] top-[12%] h-[42%] rounded-full blur-[3.2cqmin]"
+          style={{
+            background: `linear-gradient(90deg, transparent 5%, ${c1}88 38%, ${c2}99 68%, transparent 95%)`,
+            transform: 'rotate(-8deg)',
+            animation: playMotion ? `teWaveSlide ${(Number(dur) * 1.4).toFixed(2)}s ease-in-out infinite` : undefined,
+          }}
+        />
+        <div
+          className="absolute -inset-x-[15%] bottom-[10%] h-[36%] rounded-full blur-[3.6cqmin]"
+          style={{
+            background: `linear-gradient(90deg, transparent 5%, ${c2}77 35%, ${c1}88 70%, transparent 95%)`,
+            transform: 'rotate(-5deg)',
+            animation: playMotion
+              ? `teWaveSlide ${(Number(dur) * 1.7).toFixed(2)}s ease-in-out 0.8s infinite reverse`
+              : undefined,
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (el.effect === 'starfield') {
+    const starCount = Math.max(8, Math.min(22, count + 5));
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        {Array.from({ length: starCount }, (_, idx) => {
+          const left = `${((idx * 41 + 9) % 90) + 5}%`;
+          const top = `${((idx * 61 + 13) % 84) + 8}%`;
+          const sizeCq = 1.1 + (idx % 3) * 0.75;
+          const delay = `${((idx * 0.31) % 2.5).toFixed(2)}s`;
+          const starColor = idx % 3 === 0 ? c2 : c1;
+          return (
+            <span
+              key={idx}
+              className="absolute rounded-full"
+              style={{
+                left,
+                top,
+                width: `${sizeCq}cqmin`,
+                height: `${sizeCq}cqmin`,
+                backgroundColor: starColor,
+                boxShadow: `0 0 ${sizeCq * 2.2}cqmin ${starColor}`,
+                animation: playMotion
+                  ? `teTwinkle ${(Number(dur) * 0.75 + (idx % 3) * 0.45).toFixed(2)}s ease-in-out ${delay} infinite`
+                  : undefined,
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (el.effect === 'firefly') {
+    const flyCount = Math.max(5, Math.min(14, count));
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        {Array.from({ length: flyCount }, (_, idx) => {
+          const left = `${((idx * 47 + 15) % 86) + 7}%`;
+          const top = `${((idx * 59 + 11) % 78) + 11}%`;
+          const sizeCq = 2.0 + (idx % 3) * 0.9;
+          const delay = `${((idx * 0.49) % 2.9).toFixed(2)}s`;
+          const orbColor = idx % 2 === 0 ? c1 : c2;
+          return (
+            <span
+              key={idx}
+              className="absolute rounded-full"
+              style={{
+                left,
+                top,
+                width: `${sizeCq}cqmin`,
+                height: `${sizeCq}cqmin`,
+                background: `radial-gradient(circle, #FFFFFF 0%, ${orbColor} 55%, transparent 100%)`,
+                boxShadow: `0 0 ${sizeCq * 2.1}cqmin ${orbColor}`,
+                animation: playMotion
+                  ? `teFirefly ${(Number(dur) * 1.15 + (idx % 3) * 0.55).toFixed(2)}s ease-in-out ${delay} infinite`
+                  : undefined,
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (el.effect === 'prism-beams') {
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        <div
+          className="absolute -inset-y-[25%] left-[12%] w-[26%]"
+          style={{
+            background: `linear-gradient(90deg, transparent 0%, ${c1}55 42%, ${c2}66 58%, transparent 100%)`,
+            transform: 'skewX(-22deg)',
+            animation: playMotion ? `teBeamSweep ${(Number(dur) * 1.35).toFixed(2)}s ease-in-out infinite` : undefined,
+          }}
+        />
+        <div
+          className="absolute -inset-y-[25%] left-[52%] w-[16%]"
+          style={{
+            background: `linear-gradient(90deg, transparent 0%, ${c2}44 50%, transparent 100%)`,
+            transform: 'skewX(-22deg)',
+            animation: playMotion ? `teBeamSweep ${(Number(dur) * 1.35).toFixed(2)}s ease-in-out 0.9s infinite` : undefined,
+          }}
+        />
+      </div>
+    );
+  }
+
   // particles / snow / float
   const isSnow = el.effect === 'snow';
   const animName = isSnow ? 'teSnowFall' : 'teFloatUp';
@@ -804,6 +1075,186 @@ const WidgetNode: React.FC<{ el: WidgetElement; tickPhase: number; now: Date }> 
     );
   }
 
+  if (el.widgetType === 'clock-widget') {
+    const rawHours = now.getHours();
+    const use24 = el.use24Hour !== false;
+    const displayHours = use24 ? rawHours : rawHours % 12 || 12;
+    const ampm = rawHours >= 12 ? 'PM' : 'AM';
+    const timeMain = `${pad2(displayHours)}:${pad2(now.getMinutes())}`;
+    const secondsStr = pad2(now.getSeconds());
+    const weeks = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const dateLine = `${pad2(now.getMonth() + 1)}月${pad2(now.getDate())}日 · ${weeks[now.getDay()]}`;
+    return (
+      <div
+        style={boxStyle}
+        className="flex h-full w-full flex-col justify-center rounded-[2.6cqmin] border px-[3.2cqmin] py-[2cqmin] text-white backdrop-blur-md"
+      >
+        <div className="flex items-baseline gap-[1cqmin]">
+          <span className="font-mono-tabular font-bold tracking-tight" style={{ fontSize: '5.8cqmin' }}>
+            {timeMain}
+          </span>
+          {el.showSeconds !== false && (
+            <span className="font-mono-tabular font-bold" style={{ fontSize: '3.6cqmin', color: accent }}>
+              :{secondsStr}
+            </span>
+          )}
+          {!use24 && (
+            <span className="font-semibold text-white/70" style={{ fontSize: '2.5cqmin' }}>
+              {ampm}
+            </span>
+          )}
+        </div>
+        {el.showDate !== false && (
+          <div className="mt-[0.8cqmin] truncate font-mono-tabular font-medium text-white/75" style={{ fontSize: '2.5cqmin' }}>
+            {dateLine}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (el.widgetType === 'telemetry-bar') {
+    const step = Math.max(1, el.refreshSeconds ?? 2);
+    const phase = Math.floor(tickPhase / step);
+    const cpuLoad = 28 + ((phase * 7) % 19);
+    const gpuLoad = 41 + ((phase * 11) % 23);
+    const cpuTemp = 48 + (phase % 5);
+    const memPct = 62;
+    return (
+      <div
+        style={boxStyle}
+        className="flex h-full w-full flex-col justify-center gap-[1.3cqmin] rounded-[2.6cqmin] border px-[3cqmin] py-[2cqmin] text-white backdrop-blur-md"
+      >
+        <div className="flex items-center justify-between gap-[1.5cqmin]" style={{ fontSize: '2.6cqmin' }}>
+          <span className="flex items-center gap-[1cqmin] font-semibold text-white/90">
+            <Cpu className="h-[3.1cqmin] w-[3.1cqmin]" style={{ color: accent }} />
+            <span className="truncate">{el.label || '性能监控'}</span>
+          </span>
+          {el.showTemp !== false && <span className="font-mono-tabular text-white/75">{cpuTemp}°C</span>}
+        </div>
+        <div className="flex items-center gap-[1.5cqmin]" style={{ fontSize: '2.4cqmin' }}>
+          <span className="w-[5.8cqmin] shrink-0 font-mono-tabular text-white/70">CPU</span>
+          <div className="h-[1.5cqmin] flex-1 overflow-hidden rounded-full bg-white/15">
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${cpuLoad}%`, backgroundColor: accent }} />
+          </div>
+          <span className="w-[6.5cqmin] text-right font-mono-tabular font-semibold">{cpuLoad}%</span>
+        </div>
+        <div className="flex items-center gap-[1.5cqmin]" style={{ fontSize: '2.4cqmin' }}>
+          <span className="w-[5.8cqmin] shrink-0 font-mono-tabular text-white/70">GPU</span>
+          <div className="h-[1.5cqmin] flex-1 overflow-hidden rounded-full bg-white/15">
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${gpuLoad}%`, backgroundColor: accent }} />
+          </div>
+          <span className="w-[6.5cqmin] text-right font-mono-tabular font-semibold">{gpuLoad}%</span>
+        </div>
+        {el.showMemory !== false && (
+          <div className="flex items-center justify-between pt-[0.3cqmin] font-mono-tabular text-white/70" style={{ fontSize: '2.2cqmin' }}>
+            <span>内存占用</span>
+            <span>{memPct}% · 19.8/32G</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (el.widgetType === 'audio-rhythm') {
+    const barTotal = Math.max(8, Math.min(28, el.barCount ?? 20));
+    return (
+      <div
+        style={boxStyle}
+        className="flex h-full w-full flex-col justify-between rounded-[2.6cqmin] border px-[2.8cqmin] py-[2cqmin] text-white backdrop-blur-md"
+      >
+        {el.showTrackName !== false && (
+          <div className="flex items-center gap-[1.2cqmin] text-white/85" style={{ fontSize: '2.6cqmin' }}>
+            <Music2 className="h-[3.1cqmin] w-[3.1cqmin] shrink-0" style={{ color: accent }} />
+            <span className="truncate font-semibold">{el.trackName || el.label || 'Midnight Lo-Fi · 小屏宝PixBuddy'}</span>
+          </div>
+        )}
+        <div className="flex flex-1 items-end gap-[0.65cqmin] pt-[1.1cqmin]">
+          {Array.from({ length: barTotal }, (_, i) => {
+            const pct = Math.max(22, Math.round(Math.abs(Math.sin((i + 1) * 0.68 + tickPhase * 0.85)) * 100));
+            return (
+              <span
+                key={i}
+                className="flex-1 rounded-full transition-all duration-200"
+                style={{ height: `${pct}%`, backgroundColor: accent, opacity: 0.65 + (pct / 100) * 0.35 }}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (el.widgetType === 'pomodoro-widget') {
+    const mins = Math.max(1, el.focusMinutes ?? 25);
+    return (
+      <div
+        style={boxStyle}
+        className="flex h-full w-full items-center gap-[2.4cqmin] rounded-[2.6cqmin] border px-[3cqmin] py-[2cqmin] text-white backdrop-blur-md"
+      >
+        <div
+          className="flex h-[8.5cqmin] w-[8.5cqmin] shrink-0 items-center justify-center rounded-[2cqmin]"
+          style={{ backgroundColor: `${accent}28`, color: accent }}
+        >
+          <Timer className="h-[4.6cqmin] w-[4.6cqmin]" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-[1cqmin] text-white/75" style={{ fontSize: '2.4cqmin' }}>
+            <span className="truncate">{el.label || '专注计时'}</span>
+            <span aria-hidden="true">·</span>
+            <span style={{ color: accent }}>就绪</span>
+          </div>
+          <div className="font-mono-tabular font-bold leading-tight" style={{ fontSize: '5.2cqmin' }}>
+            {pad2(mins)}:00
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (el.widgetType === 'weather-capsule') {
+    const city = (el.city ?? '上海').trim() || '上海';
+    return (
+      <div
+        style={boxStyle}
+        className="flex h-full w-full items-center gap-[2.4cqmin] rounded-[2.6cqmin] border px-[3cqmin] py-[2cqmin] text-white backdrop-blur-md"
+      >
+        <CloudSun className="h-[7.2cqmin] w-[7.2cqmin] shrink-0" style={{ color: accent }} />
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-[1.4cqmin]">
+            <span className="truncate font-bold" style={{ fontSize: '3.4cqmin' }}>
+              {city}
+            </span>
+            <span className="font-mono-tabular font-bold" style={{ fontSize: '4.2cqmin', color: accent }}>
+              22°C
+            </span>
+          </div>
+          <div className="truncate text-white/75" style={{ fontSize: '2.5cqmin' }}>
+            多云转晴{el.showAqi !== false ? ' · 空气优 32' : ''}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (el.widgetType === 'sticky-note') {
+    const note = (el.noteText ?? '完成 D92 视觉方案评审 · 19:00').trim() || '保持专注';
+    return (
+      <div
+        style={boxStyle}
+        className="flex h-full w-full flex-col justify-center rounded-[2.6cqmin] border px-[3cqmin] py-[2cqmin] text-white backdrop-blur-md"
+      >
+        <div className="flex items-center gap-[1.2cqmin] font-semibold text-white/80" style={{ fontSize: '2.5cqmin' }}>
+          <StickyNote className="h-[3.1cqmin] w-[3.1cqmin] shrink-0" style={{ color: accent }} />
+          <span className="truncate">{el.label || '桌面便签'}</span>
+        </div>
+        <div className="mt-[1cqmin] line-clamp-2 font-medium leading-snug text-white/95" style={{ fontSize: '2.9cqmin' }}>
+          {note}
+        </div>
+      </div>
+    );
+  }
+
   // sysmon default
   const cpu = 28 + ((tickPhase * 7) % 19);
   const gpu = 42 + ((tickPhase * 11) % 24);
@@ -899,14 +1350,16 @@ const PluginNode: React.FC<{ el: PluginElement; tickPhase: number }> = ({ el, ti
     return (
       <div
         style={boxStyle}
-        className="flex h-full w-full flex-col items-center justify-center rounded-[2.6cqmin] border px-[3cqmin] py-[1.6cqmin] text-center text-white backdrop-blur-md"
+        className="h-full w-full overflow-hidden rounded-[2.6cqmin] border"
       >
-        <div className="truncate font-bold" style={{ fontSize: '3.5cqmin', color: accent }}>
-          {String(el.config.currentLine || '星辰落入桌面极光')}
-        </div>
-        <div className="mt-[0.6cqmin] truncate text-white/60" style={{ fontSize: '2.6cqmin' }}>
-          {String(el.config.nextLine || '每一帧灵感都在此刻凝聚')}
-        </div>
+        <CraftLyricsWidget
+          songTitle={String(el.config.songTitle || 'Midnight City')}
+          artist={String(el.config.artist || 'M83')}
+          spectrumBars={Number(el.config.spectrumBars) || 20}
+          glowColor={accent}
+          compact={true}
+          interactive={false}
+        />
       </div>
     );
   }
@@ -935,25 +1388,14 @@ const PluginNode: React.FC<{ el: PluginElement; tickPhase: number }> = ({ el, ti
     return (
       <div
         style={boxStyle}
-        className="flex h-full w-full items-center justify-between rounded-[2.6cqmin] border px-[3cqmin] py-[2cqmin] text-white backdrop-blur-md"
+        className="h-full w-full overflow-hidden rounded-[2.6cqmin] border"
       >
-        <div className="min-w-0">
-          <div className="flex items-center gap-[1cqmin] font-bold" style={{ fontSize: '3.4cqmin' }}>
-            <TrendingUp className="h-[3.6cqmin] w-[3.6cqmin]" style={{ color: accent }} />
-            <span>{String(el.config.symbol || 'NVDA')}</span>
-          </div>
-          <div className="text-white/60" style={{ fontSize: '2.2cqmin' }}>
-            实时行情 · Mock
-          </div>
-        </div>
-        <div className="text-right font-mono-tabular">
-          <div className="font-bold" style={{ fontSize: '3.8cqmin' }}>
-            {String(el.config.price || '142.85')}
-          </div>
-          <div className="font-semibold text-emerald-400" style={{ fontSize: '2.6cqmin' }}>
-            {String(el.config.change || '+2.41%')}
-          </div>
-        </div>
+        <CraftStocksWidget
+          selectedSymbol={String(el.config.symbol || 'NVDA')}
+          accentColor={accent}
+          compact={true}
+          interactive={false}
+        />
       </div>
     );
   }
@@ -982,16 +1424,166 @@ const PluginNode: React.FC<{ el: PluginElement; tickPhase: number }> = ({ el, ti
     return (
       <div
         style={boxStyle}
-        className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[2.6cqmin] border text-cyan-200 backdrop-blur-md"
+        className="h-full w-full overflow-hidden rounded-[2.6cqmin] border"
       >
-        <div className="absolute inset-0 bg-gradient-to-b from-cyan-950/60 to-blue-950/80" />
-        <div className="relative z-10 flex items-center gap-[2cqmin]">
-          <Fish className="h-[6cqmin] w-[6cqmin] text-cyan-300 animate-pulse" />
-          <div style={{ fontSize: '2.8cqmin' }}>
-            <div className="font-bold">桌面生态鱼缸</div>
-            <div className="text-cyan-200/70">{String(el.config.fishCount || 4)} 条热带鱼游弋中</div>
-          </div>
-        </div>
+        <CraftAquariumWidget
+          fishCount={Number(el.config.fishCount) || 7}
+          causticsIntensity={Number(el.config.causticsIntensity) || 0.6}
+          bubbleSpeed={Number(el.config.bubbleSpeed) || 1.0}
+          showClock={el.config.showClock !== false}
+          compact={true}
+          interactive={false}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'nixie-clock') {
+    return (
+      <div
+        style={boxStyle}
+        className="h-full w-full overflow-hidden rounded-[2.6cqmin] border"
+      >
+        <CraftNixieClockWidget
+          colorHue={(String(el.config.colorHue || 'amber') as NixieColorHue) || 'amber'}
+          showSeconds={el.config.showSeconds !== false}
+          showDate={el.config.showDate !== false}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'cyber-pet') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftCyberPetWidget
+          petName={String(el.config.petName || 'Mochi')}
+          species={(String(el.config.petSpecies || 'mochi') as CyberPetSpecies) || 'mochi'}
+          mood={(String(el.config.mood || 'happy') as CyberPetMood) || 'happy'}
+          accentColor={accent}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'campfire') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftCampfireWidget
+          flameIntensity={(String(el.config.flameIntensity || 'medium') as 'low' | 'medium' | 'high') || 'medium'}
+          emberDensity={(String(el.config.emberDensity || 'medium') as 'low' | 'medium' | 'high') || 'medium'}
+          showSoundHint={el.config.showSoundHint !== false}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'zen-bonsai') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftBonsaiWidget
+          species={(String(el.config.bonsaiSpecies || 'pine') as BonsaiSpecies) || 'pine'}
+          growthDays={Number(el.config.growthDays) || 28}
+          sunlightTone={(String(el.config.sunlightTone || 'warm') as BonsaiSunlight) || 'warm'}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'flip-clock') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftFlipClockWidget
+          shellStyle={(String(el.config.flipShellStyle || 'obsidian') as FlipShellStyle) || 'obsidian'}
+          showSeconds={el.config.showSeconds !== false}
+          showDate={el.config.showDate !== false}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'vu-meter') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftVuMeterWidget
+          backlightHue={(String(el.config.vuBacklight || 'warm-amber') as VuBacklightHue) || 'warm-amber'}
+          sensitivity={(String(el.config.vuSensitivity || 'balanced') as VuSensitivity) || 'balanced'}
+          deckLabel={String(el.config.deckLabel || 'MASTER STEREO')}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'cassette-deck') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftCassetteWidget
+          trackTitle={String(el.config.songTitle || 'City Pop Tape #04')}
+          artistLabel={String(el.config.artist || 'SIDE A · 90MIN')}
+          shellColor={(String(el.config.cassetteShell || 'smoke') as CassetteShellColor) || 'smoke'}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'zodiac-oracle') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftZodiacWidget
+          sign={(String(el.config.zodiacSign || 'aquarius') as ZodiacSignKey) || 'aquarius'}
+          showConstellationGlow={el.config.showConstellationGlow !== false}
+          accentColor={accent}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'parcel-tracker') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftParcelWidget
+          parcelName={String(el.config.parcelName || '客制化机械键盘套件')}
+          carrier={String(el.config.carrier || '顺丰速运')}
+          stage={(String(el.config.parcelStage || 'delivering') as ParcelStage) || 'delivering'}
+          accentColor={accent}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'milestone-days') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftCountdownWidget
+          milestoneTitle={String(el.config.milestoneTitle || '年度版本发布')}
+          targetDays={Number(el.config.targetDays ?? 18)}
+          countMode={(String(el.config.countMode || 'countdown') as MilestoneMode) || 'countdown'}
+          accentColor={accent}
+          compact={true}
+        />
+      </div>
+    );
+  }
+
+  if (el.capabilityKey === 'net-radar') {
+    return (
+      <div style={boxStyle} className="h-full w-full overflow-hidden rounded-[2.6cqmin] border">
+        <CraftNetSpeedWidget
+          unitMode={(String(el.config.unitMode || 'Mbps') as NetUnitMode) || 'Mbps'}
+          refreshSeconds={Number(el.config.refreshSeconds) || 2}
+          showPingChart={el.config.showPingChart !== false}
+          accentColor={accent}
+          compact={true}
+        />
       </div>
     );
   }

@@ -6,7 +6,7 @@ namespace MiraBox.Core;
 
 public sealed record CraftPluginEntry(string Id, string Name, string Version, string Author, string Description,
     string PackageDirectory, string CodePath, string ActionId, int Width, int Height, bool Hour12,
-    string ContentHash, long Bytes, int Files, DateTimeOffset ImportedAt);
+    string ContentHash, long Bytes, int Files, DateTimeOffset ImportedAt, string? DefaultSettings = null, string Format = "Craft");
 public sealed record CraftPluginImport(CraftPluginEntry Entry, bool AlreadyImported);
 
 /// <summary>Imports a self-contained Woodland package. Importing never executes plugin code.</summary>
@@ -28,7 +28,8 @@ public sealed class CraftPluginStore(string directory)
         return Path.Combine(root, "Packages", entry.PackageDirectory);
     }
 
-    public CraftPluginImport ImportWoodland(string selectedDirectory, DateTimeOffset importedAt)
+    public CraftPluginImport ImportWoodland(string selectedDirectory, DateTimeOffset importedAt) => Import(selectedDirectory, importedAt, true);
+    public CraftPluginImport Import(string selectedDirectory, DateTimeOffset importedAt, bool woodlandOnly = false)
     {
         var source = ResolvePackage(selectedDirectory);
         if (source.Equals(root, StringComparison.OrdinalIgnoreCase) ||
@@ -43,17 +44,20 @@ public sealed class CraftPluginStore(string directory)
         string Text(JsonElement node, string field) => node.TryGetProperty(field, out var item) &&
             item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString())
                 ? item.GetString()! : throw new InvalidDataException($"插件清单缺少 {field}。");
+        bool native = document.TryGetProperty("PixBuddyApiVersion", out var api) && !woodlandOnly;
+        if (native && (api.ValueKind != JsonValueKind.Number || !api.TryGetInt32(out var value) || value != 1))
+            throw new InvalidDataException("小屏宝插件 API 版本不受支持。");
         var codePath = Text(document, "CodePath");
-        if (codePath != "index.html" || !document.TryGetProperty("SDKVersion", out var sdk) || sdk.ValueKind != JsonValueKind.Number || !sdk.TryGetInt32(out var sdkVersion) || sdkVersion != 1 ||
-            Text(document, "APIVersion") != "1.0")
-            throw new InvalidDataException("本批仅支持 Woodland Clock 的 HTML SDK 1 / API 1.0 插件。");
+        if (!codePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || Path.IsPathRooted(codePath) || codePath.Contains("..") || codePath.IndexOfAny(['#', '?', '%', ':', '\\']) >= 0 || !File.Exists(Path.Combine(source, codePath)) || (!native && (!document.TryGetProperty("SDKVersion", out var sdk) || sdk.ValueKind != JsonValueKind.Number || !sdk.TryGetInt32(out var sdkVersion) || sdkVersion != 1 ||
+            Text(document, "APIVersion") != "1.0")))
+            throw new InvalidDataException("需要包内 HTML 入口。Craft 插件须使用 SDK 1 / API 1.0。");
         if (!document.TryGetProperty("Actions", out var actions) || actions.ValueKind != JsonValueKind.Array || actions.GetArrayLength() != 1)
-            throw new InvalidDataException("Woodland Clock 操作清单无效。");
+            throw new InvalidDataException("当前支持包含一个操作的插件。");
         var action = actions[0];
         if (action.ValueKind != JsonValueKind.Object) throw new InvalidDataException("插件操作必须是 JSON 对象。");
         var actionId = Text(action, "UUID");
-        if (actionId != WoodlandId + ".clock") throw new InvalidDataException("请选择 Woodland Clock 插件，本批尚未支持其他 Craft 插件。");
-        if (Text(action, "PropertyInspectorPath") != "index.html" ||
+        if (woodlandOnly && actionId != WoodlandId + ".clock") throw new InvalidDataException("请选择 Woodland Clock 插件，本批尚未支持其他 Craft 插件。");
+        if ((woodlandOnly && Text(action, "PropertyInspectorPath") != "index.html") ||
             !action.TryGetProperty("Controllers", out var controllers) || controllers.ValueKind != JsonValueKind.Array ||
             !controllers.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.String && item.GetString() == "SecondaryScreen"))
             throw new InvalidDataException("Woodland Clock 的配置页面或设备类型无效。");
@@ -61,15 +65,16 @@ public sealed class CraftPluginStore(string directory)
             !settings.TryGetProperty("ActionGeometry", out var geometry) || geometry.ValueKind != JsonValueKind.Object ||
             !geometry.TryGetProperty("width", out var widthValue) || widthValue.ValueKind != JsonValueKind.Number || !widthValue.TryGetInt32(out var width) || width is < 1 or > 8192 ||
             !geometry.TryGetProperty("height", out var heightValue) || heightValue.ValueKind != JsonValueKind.Number || !heightValue.TryGetInt32(out var height) || height is < 1 or > 8192 ||
-            !settings.TryGetProperty("hour12", out var hour12) || hour12.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            (woodlandOnly && (!settings.TryGetProperty("hour12", out var strictHour12) || strictHour12.ValueKind is not (JsonValueKind.True or JsonValueKind.False))))
             throw new InvalidDataException("插件默认尺寸或时间制式无效。");
-        foreach (var required in new[] { "index.html", "interval.js", "images/woodland.png", "fonts/fredoka.ttf", "fonts/fredoka-OFL.txt" })
+        if (woodlandOnly) foreach (var required in new[] { "index.html", "interval.js", "images/woodland.png", "fonts/fredoka.ttf", "fonts/fredoka-OFL.txt" })
             if (!File.Exists(Path.Combine(source, required))) throw new InvalidDataException("插件缺少资源：" + required);
+        var pluginId = actionId.Contains('.') ? actionId[..actionId.LastIndexOf('.')] : actionId;
         var hash = Hash(source, files);
         Directory.CreateDirectory(root);
         using var importLock = new FileStream(Path.Combine(root, ".import.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var entries = Entries.ToList();
-        var existing = entries.FirstOrDefault(entry => entry.Id == WoodlandId);
+        var existing = entries.FirstOrDefault(entry => entry.Id == pluginId);
         if (existing != null)
         {
             if (existing.ContentHash != hash) throw new InvalidDataException("已导入同一插件的其他内容。本批不覆盖已有插件，请保留当前版本。");
@@ -79,9 +84,9 @@ public sealed class CraftPluginStore(string directory)
             return new(existing, true);
         }
         var id = Guid.NewGuid().ToString("N");
-        var entry = new CraftPluginEntry(WoodlandId, Text(document, "Name"), Text(document, "Version"),
+        var entry = new CraftPluginEntry(pluginId, Text(document, "Name"), Text(document, "Version"),
             Text(document, "Author"), Text(document, "Description"), id, codePath, actionId, width, height,
-            hour12.GetBoolean(), hash, files.Sum(file => new FileInfo(file).Length), files.Length, importedAt);
+            settings.TryGetProperty("hour12", out var hour12) && hour12.ValueKind == JsonValueKind.True, hash, files.Sum(file => new FileInfo(file).Length), files.Length, importedAt, settings.GetRawText(), native ? "小屏宝" : "Craft");
         var staging = Path.Combine(root, ".import-" + id);
         var destination = PackagePath(entry);
         var temporaryIndex = Path.Combine(root, ".index-" + id + ".tmp");

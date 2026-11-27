@@ -17,6 +17,7 @@ import {
   Flame,
 } from 'lucide-react';
 import {
+  INITIAL_THEMES,
   CarouselPlaylist,
   ContentCategory,
   DeviceInfo,
@@ -255,7 +256,10 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
   if (section === 'online') {
     const filtered = themes
       .filter((item) => {
-        if (item.source === 'local') return false;
+        if (item.deletedAt) return false;
+        const official = item.source === 'official' || (!item.source && INITIAL_THEMES.some(theme =>
+          theme.id === item.id && (!theme.source || theme.source === 'official')));
+        if (!official) return false;
         if (categoryFilter !== '全部' && item.category !== categoryFilter) return false;
         return true;
       })

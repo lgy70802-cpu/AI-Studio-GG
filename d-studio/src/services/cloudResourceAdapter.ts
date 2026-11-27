@@ -453,9 +453,12 @@ function buildGeneratedCatalog(): CloudCatalogItem[] {
         name: `${w.name} · ${themeLabel}`,
         description: `${w.description}（基于客户端内置组件协议 v${w.version}）`,
         categoryId:
-          w.type === 'sysmon' || w.type === 'mini-chart'
+          w.type === 'sysmon' || w.type === 'mini-chart' || w.type === 'telemetry-bar'
             ? 'telemetry'
-            : w.type === 'weather' || w.type === 'audio-spectrum'
+            : w.type === 'weather' ||
+                w.type === 'weather-capsule' ||
+                w.type === 'audio-spectrum' ||
+                w.type === 'audio-rhythm'
               ? 'lifestyle'
               : 'productivity',
         subCategoryId: w.type,
@@ -485,6 +488,7 @@ function buildGeneratedCatalog(): CloudCatalogItem[] {
             bgOpacity: 82,
             label: w.name,
             value: 74,
+            ...(w.defaultProps ?? {}),
           }),
         ],
         widgetType: w.type,

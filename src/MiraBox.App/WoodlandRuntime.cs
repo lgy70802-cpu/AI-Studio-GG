@@ -17,13 +17,18 @@ internal sealed class WoodlandRuntime : IDisposable
     readonly CraftPluginEntry entry;
     readonly string package, cache;
     readonly bool hour12;
+    readonly bool cacheFrames;
+    readonly System.Text.Json.Nodes.JsonObject? configuredSettings;
+    readonly string origin = "https://plugin-" + Guid.NewGuid().ToString("N") + ".local/";
     readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool disposed;
-    public WoodlandRuntime(Panel host, CraftPluginEntry entry, string package, string cache, int width, int height, bool hour12)
+    public WoodlandRuntime(Panel host, CraftPluginEntry entry, string package, string cache, int width, int height, bool hour12, bool cacheFrames = true, System.Text.Json.Nodes.JsonObject? configuredSettings = null)
     {
         this.host = host; this.entry = entry; this.package = package; this.cache = cache;
         Width = width; Height = height; this.hour12 = hour12;
-        if (File.Exists(cache))
+        this.cacheFrames = cacheFrames;
+        this.configuredSettings = configuredSettings;
+        if (cacheFrames && File.Exists(cache))
             try { AcceptFrame(File.ReadAllBytes(cache), false); } catch (Exception ex) when (ex is IOException or NotSupportedException or InvalidDataException) { }
         host.Children.Add(browser);
         _ = StartAsync();
@@ -50,25 +55,35 @@ internal sealed class WoodlandRuntime : IDisposable
             await browser.EnsureCoreWebView2Async(environment);
             if (disposed) return;
             var core = browser.CoreWebView2;
-            core.SetVirtualHostNameToFolderMapping("woodland.local", package, CoreWebView2HostResourceAccessKind.DenyCors);
+            core.Settings.AreHostObjectsAllowed = false;
+            core.Settings.AreDefaultScriptDialogsEnabled = false;
+            core.SetVirtualHostNameToFolderMapping(new Uri(origin).Host, package, CoreWebView2HostResourceAccessKind.DenyCors);
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.NavigationStarting += (_, navigation) => {
-                if (!navigation.Uri.StartsWith("https://woodland.local/", StringComparison.OrdinalIgnoreCase)) navigation.Cancel = true;
+                if (!navigation.Uri.StartsWith(origin, StringComparison.OrdinalIgnoreCase)) navigation.Cancel = true;
             };
+            core.FrameNavigationStarting += (_, navigation) => navigation.Cancel = true;
+            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+            core.WebResourceRequested += (_, request) =>
+            {
+                if (!request.Request.Uri.StartsWith(origin, StringComparison.OrdinalIgnoreCase))
+                    request.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "");
+            };
+            core.DownloadStarting += (_, download) => download.Cancel = true;
             core.NewWindowRequested += (_, request) => request.Handled = true;
             core.PermissionRequested += (_, request) => request.State = CoreWebView2PermissionState.Deny;
             core.ProcessFailed += (_, failure) => Fail("插件浏览器进程异常：" + failure.ProcessFailedKind);
             core.WebMessageReceived += (_, message) => {
                 try
                 {
-                    if (disposed || !message.Source.StartsWith("https://woodland.local/", StringComparison.OrdinalIgnoreCase)) return;
+                    if (disposed || !message.Source.StartsWith(origin, StringComparison.OrdinalIgnoreCase)) return;
                     using var payload = JsonDocument.Parse(message.WebMessageAsJson);
                     var node = payload.RootElement;
                     if (node.GetProperty("event").GetString() == "frame")
                     {
                         var data = node.GetProperty("image").GetString()!;
-                        const string prefix = "data:image/jpeg;base64,";
+                        var prefix = data.StartsWith("data:image/png;base64,", StringComparison.Ordinal) ? "data:image/png;base64," : "data:image/jpeg;base64,";
                         if (!data.StartsWith(prefix, StringComparison.Ordinal) || data.Length > 12 * 1024 * 1024)
                             throw new InvalidDataException("插件帧格式或大小无效。");
                         AcceptFrame(Convert.FromBase64String(data[prefix.Length..]), true);
@@ -83,15 +98,20 @@ internal sealed class WoodlandRuntime : IDisposable
                 if (navigation.IsSuccess) loaded.TrySetResult();
                 else loaded.TrySetException(new IOException("插件页面加载失败：" + navigation.WebErrorStatus));
             };
-            core.Navigate("https://woodland.local/" + entry.CodePath);
+            core.Navigate(origin + entry.CodePath);
             await loaded.Task.WaitAsync(TimeSpan.FromSeconds(15));
             if (disposed) return;
             var args = JsonSerializer.Serialize(new { plugin = new { uuid = entry.Id } });
+            var settings = configuredSettings ?? System.Text.Json.Nodes.JsonNode.Parse(entry.DefaultSettings ?? "{}")!.AsObject();
+            settings["ActionGeometry"] = System.Text.Json.JsonSerializer.SerializeToNode(new { width = Width, height = Height });
+            if (configuredSettings == null) settings["hour12"] = hour12;
             var appear = JsonSerializer.Serialize(new {
                 @event = "willAppear", action = entry.ActionId, context = "woodland-instance",
-                payload = new { settings = new { ActionGeometry = new { width = Width, height = Height }, hour12 } }
+                payload = new { settings }
             });
-            await core.ExecuteScriptAsync($"window.__craftAppear={appear};window.connectSDSocket('0','woodland-instance','registerPlugin',{JsonSerializer.Serialize(args)});");
+            if (entry.Format == "小屏宝")
+                await core.ExecuteScriptAsync($"window.dispatchEvent(new CustomEvent(\"pixbuddy-start\",{{detail:{settings.ToJsonString()}}}));");
+            else await core.ExecuteScriptAsync($"window.__craftAppear={appear};window.connectSDSocket('0','woodland-instance','registerPlugin',{JsonSerializer.Serialize(args)});");
             await ready.Task.WaitAsync(TimeSpan.FromSeconds(15));
         }
         catch (Exception ex) when (!disposed) { Fail(ex.Message); }
@@ -104,14 +124,14 @@ internal sealed class WoodlandRuntime : IDisposable
         var frame = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
         if (frame.PixelWidth != Width || frame.PixelHeight != Height) throw new InvalidDataException("插件画布尺寸与目标不一致。");
         frame.Freeze(); Frame = frame; Revision++; Error = null;
-        if (persist)
+        if (persist && cacheFrames)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(cache)!);
             var temporary = cache + ".tmp";
             File.WriteAllBytes(temporary, jpeg);
             File.Move(temporary, cache, true);
-            ready.TrySetResult();
         }
+        if (persist) ready.TrySetResult();
         FrameChanged?.Invoke();
     }
 
@@ -138,8 +158,16 @@ internal sealed class WoodlandRuntime : IDisposable
     const string Bridge = """
         (() => {
           const post = data => chrome.webview.postMessage(data);
+          let lastFrame = -Infinity;
+          const submitFrame = image => {
+            const now = performance.now();
+            if (now - lastFrame < 100) return;
+            lastFrame = now;
+            post({event:'frame', image});
+          };
           const sockets = new Set();
           class CraftSocket extends EventTarget {
+            static OPEN = 1;
             constructor(url) {
               super(); if (url !== 'ws://127.0.0.1:0') throw new Error('Unsupported Woodland socket');
               this.readyState=0;this.bufferedAmount=0;sockets.add(this);
@@ -148,12 +176,15 @@ internal sealed class WoodlandRuntime : IDisposable
             send(raw) {
               const data=JSON.parse(raw);
               if(data.event==='registerPlugin') setTimeout(()=>this.receive(window.__craftAppear),0);
-              else if(data.event==='setImage' && data.context==='woodland-instance') post({event:'frame',image:data.payload.image});
+              else if(data.event==='getSettings') this.receive({...window.__craftAppear,event:'didReceiveSettings'});
+              else if(data.event==='setSettings') {window.__craftAppear.payload.settings=data.payload;this.receive({...window.__craftAppear,event:'didReceiveSettings'});}
+              else if(data.event==='setImage' && data.context==='woodland-instance') submitFrame(data.payload.image);
             }
             receive(data) { this.onmessage?.(new MessageEvent('message',{data:JSON.stringify(data)})); }
             close() {this.readyState=3;sockets.delete(this);}
           }
           window.WebSocket=CraftSocket;
+          window.pixBuddy = Object.freeze({ submitFrame });
           window.addEventListener('error',e=>post({event:'error',message:e.message}));
           window.addEventListener('unhandledrejection',e=>post({event:'error',message:String(e.reason)}));
           const NativeDate=Date;

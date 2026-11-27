@@ -22,7 +22,7 @@ public sealed partial class StudioWindow
             GlassFrameThickness = new Thickness(1),
             UseAeroCaptionButtons = false
         });
-        var frame = new Border { Background = Brushes.White, Child = browser };
+        var frame = new Border { Background = Brushes.White, Child = new Grid { Children = { pluginHost, browser } } };
         void UpdateFrame()
         {
             frame.BorderThickness = WindowState == WindowState.Maximized ? new Thickness(0) : new Thickness(1);

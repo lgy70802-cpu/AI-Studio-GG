@@ -136,3 +136,11 @@ export const refreshCurrentMedia = (serial: string, themeId: string, portrait: b
 
 export const setCloseToTray = (enabled: boolean) => request<{ closeToTray: boolean }>("window-preferences", { enabled });
 export const renameDevice = (serial: string, name: string) => request<boolean>("device-rename", { serial, name });
+export interface CraftPluginEntry { Id: string; Name: string; Version: string; Author: string; Format?: string }
+export const listCraftPlugins = () => request<CraftPluginEntry[]>('craft-list');
+export const importCraftPlugin = () => request<{ Entry: CraftPluginEntry; AlreadyImported: boolean } | null>('craft-import');
+export const previewCraftPlugin = (pluginId: string, serial: string) => request<boolean>('craft-preview', { pluginId, serial });
+export type CraftSettings = Record<string, boolean | string | number>;
+export const craftSettings = (pluginId: string) => request<CraftSettings>('craft-settings', { pluginId });
+export const configureCraft = (pluginId: string, settings: CraftSettings) => request<boolean>('craft-configure', { pluginId, settings });
+export const applyCraft = (pluginId: string, serial: string) => request<boolean>('craft-apply', { pluginId, serial });

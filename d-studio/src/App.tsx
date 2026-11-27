@@ -175,7 +175,7 @@ export default function App() {
       desktopStatic: true,
       desktopFlipped: activeDevice.flipped,
       desktopBrightness: activeDevice.standby ? 0 : activeDevice.brightness ?? 100,
-      category: activeTheme.category,
+      category: activeDevice.themeId?.startsWith('craft-plugin:') ? '主题' : activeTheme.category,
       editorProject: undefined,
     };
     if (tempPreview && tempPreview.scopeKey === currentScopeKey) {
@@ -1772,8 +1772,8 @@ export default function App() {
             }
           >
             {/* Search / Filter Result Strip when user filters from TopBar */}
-              {desktopMode && ['online', 'profile', 'plugins'].includes(activeNav) && <div role="status" className="mb-4 rounded-xl border border-[#E6E4F2] bg-white p-3 text-[12px] text-[#7A7690]">
-                {activeNav === 'online' ? '当前展示内置示例资源，尚未连接真实在线商店。可用素材可以加入本机资源库。' : activeNav === 'profile' ? '此页为原型账号与会员演示，尚未连接登录、支付或订阅服务。' : '插件页面保留原型演示，插件真实数据接入不属于当前版本功能。'}
+              {desktopMode && ['online', 'profile'].includes(activeNav) && <div role="status" className="mb-4 rounded-xl border border-[#E6E4F2] bg-white p-3 text-[12px] text-[#7A7690]">
+                {activeNav === 'online' ? '当前展示内置示例资源，尚未连接真实在线商店。可用素材可以加入本机资源库。' : '此页为原型账号与会员演示，尚未连接登录、支付或订阅服务。'}
               </div>}
             {hasActiveSearch && activeNav === 'home' && (
               <div className="mb-5 rounded-[22px] bg-white p-4 shadow-[0_10px_28px_rgba(30,20,80,0.05)]">

@@ -49,11 +49,9 @@ import {
   BuiltinTemplateSpec,
   MOTION_PRESETS,
   PLUGIN_CAPABILITY_REGISTRY,
-  TEXT_STYLE_PRESETS,
   WIDGET_CATALOG,
   computeImportMediaBox,
   makeElement,
-  readImageDimensions,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
 import {
@@ -206,9 +204,6 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
   const [assetRecents, setAssetRecents] = useState<string[]>(() => loadAssetPrefs().rec);
   const [cloudAssets, setCloudAssets] = useState<CloudCatalogItem[]>([]);
 
-  // Images tab state
-  const [imgSource, setImgSource] = useState<'builtin' | 'library' | 'local'>('builtin');
-
   // Time tab state
   const [timeUse24, setTimeUse24] = useState(true);
   const [timeShowSec, setTimeShowSec] = useState(false);
@@ -285,7 +280,11 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
     if (!preset) return;
     let els = preset.build(isPortrait);
     if (assetTint) {
-      els = els.map((e) => ({ ...e, color: assetTint }));
+      els = els.map((e) => ({
+        ...e,
+        color: assetTint,
+        ...(e.kind === 'text' && e.fx === 'gradient' ? { fx: '' as const } : {}),
+      }));
     }
     const nextRec = [preset.name, ...assetRecents.filter((x) => x !== preset.name)].slice(0, 8);
     setAssetRecents(nextRec);
@@ -448,9 +447,31 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
         };
       }
       if (el.kind === 'text') {
+        if (el.vert) {
+          return {
+            ...el,
+            size: Math.max(9.5, Math.min(11.5, +(el.size * 1.1).toFixed(1))),
+            ls: 10,
+          };
+        }
+        const multiTextCount = els.filter((x) => x.kind === 'text').length;
+        const scaledSize =
+          el.text.length > 14
+            ? 9.5
+            : el.text.length > 8
+              ? Math.max(11, Math.min(15, +(el.size * 1.05).toFixed(1)))
+              : Math.max(11, Math.min(20, +(el.size * 1.25).toFixed(1)));
+        const adjustedY =
+          multiTextCount > 1 && el.y !== 0
+            ? el.y < 0
+              ? Math.min(el.y, -11)
+              : Math.max(el.y, 12)
+            : el.y;
         return {
           ...el,
-          size: Math.max(10, Math.min(22, +(el.size * 1.35).toFixed(1))),
+          size: scaledSize,
+          y: adjustedY,
+          ...(el.w == null && (el.text.length > 8 || el.text.includes(' ')) ? { w: 86 } : {}),
         };
       }
       return el;
@@ -481,13 +502,11 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
     add: '快捷添加',
     templates: '模板库',
     assets: '素材中心',
-    text: '文字样式',
-    images: '图片资源',
     time: '时间日期模块',
+    background: '画布背景',
     motion: '动态特效',
     widgets: '内置组件',
     plugins: '插件能力',
-    background: '画布背景',
     layers: '图层结构',
   };
 
@@ -1191,7 +1210,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                 type="text"
                 value={assetQuery}
                 onChange={(e) => setAssetQuery(e.target.value)}
-                placeholder="搜索形状、表盘、线条、装饰…"
+                placeholder="搜索形状、文字、表盘、线条、装饰…"
                 className="w-full rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] py-1.5 pl-8 pr-3 text-[12px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
               />
             </div>
@@ -1244,7 +1263,13 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                   <div className="grid grid-cols-3 gap-2">
                     {filteredBuiltinAssets.map((ap) => {
                       let previewEls = normalizeAssetElementsForSquarePreview(ap.build(true));
-                      if (assetTint) previewEls = previewEls.map((e) => ({ ...e, color: assetTint }));
+                      if (assetTint) {
+                        previewEls = previewEls.map((e) => ({
+                          ...e,
+                          color: assetTint,
+                          ...(e.kind === 'text' && e.fx === 'gradient' ? { fx: '' as const } : {}),
+                        }));
+                      }
                       const isFav = assetFavs.includes(ap.name);
                       const isDarkText = assetTint === '#1A172B';
                       return (
@@ -1427,239 +1452,6 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
           </div>
         )}
 
-        {/* 4. TEXT PANEL (Visual Typography Cards) */}
-        {activeTab === 'text' && (
-          <div className="grid grid-cols-2 gap-2">
-            {TEXT_STYLE_PRESETS.map((preset) => {
-              const previewSize = preset.overrides.vert
-                ? 24
-                : Math.max(14, Math.min(34, (preset.overrides.size || 14) * 1.9));
-              const sampleText =
-                preset.id === 'txt-body'
-                  ? '保持创造力'
-                  : preset.overrides.text || preset.label;
-              const previewEl = makeElement('text', {
-                ...preset.overrides,
-                text: sampleText,
-                size: previewSize,
-                a: 'mc',
-                x: 0,
-                y: 0,
-              });
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() =>
-                    onInsertElements([makeElement('text', preset.overrides)], preset.label)
-                  }
-                  title={`${preset.label} · ${preset.desc}`}
-                  className="group overflow-hidden rounded-xl border border-[#E6E4F2] bg-white text-left transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.12)]"
-                >
-                  <div className="relative h-20 w-full overflow-hidden bg-[#100D20]">
-                    {renderElementPreviewThumb(
-                      [previewEl],
-                      { kind: 'style', style: 'ink', dim: 0, blur: 0, fit: 'cover' },
-                      [420, 260]
-                    )}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2 pb-1 pt-2.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      <div className="truncate text-[10px] text-white/90">{preset.desc}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between px-2.5 py-1.5">
-                    <span className="truncate text-[11.5px] font-bold text-[#1A172B]">
-                      {preset.label}
-                    </span>
-                    <Plus className="h-3.5 w-3.5 shrink-0 text-[#5E45F8] opacity-70 transition-opacity group-hover:opacity-100" />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 5. IMAGES PANEL (Pure Visual Cards with Hover Actions) */}
-        {activeTab === 'images' && (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onTriggerLocalUpload('el')}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#5E45F8] py-2 text-[12px] font-semibold text-white hover:bg-[#4D34E6]"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                <span>上传本地图片</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenLibraryPicker('el')}
-                className="flex items-center justify-center gap-1 rounded-xl border border-[#E6E4F2] px-3 py-2 text-[12px] font-semibold text-[#1A172B] hover:border-[#5E45F8] hover:text-[#5E45F8]"
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-                <span>资源库</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 rounded-xl border border-[#E6E4F2] bg-[#F5F4FA] p-1 text-[11px] font-semibold">
-              {[
-                { id: 'builtin', label: '内置壁纸' },
-                { id: 'library', label: '我的图库' },
-                { id: 'local', label: '本地导入' },
-              ].map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setImgSource(s.id as 'builtin' | 'library' | 'local')}
-                  className={`rounded-lg py-1 transition-all ${
-                    imgSource === s.id ? 'bg-white text-[#5E45F8] shadow-xs' : 'text-[#6B6880]'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-
-            {imgSource === 'builtin' && (
-              <div className="grid grid-cols-2 gap-2">
-                {BUILTIN_WALLPAPERS.map((wp) => (
-                  <div
-                    key={wp.id}
-                    className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-[#E6E4F2] bg-[#100D20] transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.14)]"
-                  >
-                    <img
-                      src={wp.url}
-                      alt={wp.name}
-                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/85 via-black/35 to-black/15 p-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      <div className="truncate text-[11px] font-bold text-white drop-shadow">
-                        {wp.name}
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const dims = await readImageDimensions(wp.url);
-                            const box = computeImportMediaBox(dims.w, dims.h, layoutSize[0], layoutSize[1]);
-                            onInsertElements(
-                              [
-                                makeElement('image', {
-                                  src: wp.url,
-                                  w: box.w,
-                                  h: box.h,
-                                  ar: box.ar,
-                                  size: box.size,
-                                  fit: box.fit,
-                                  sourceMeta: {
-                                    origin: 'library',
-                                    name: wp.name,
-                                    naturalWidth: dims.w,
-                                    naturalHeight: dims.h,
-                                  },
-                                }),
-                              ],
-                              wp.name
-                            );
-                          }}
-                          className="flex-1 rounded-md bg-white/92 py-1 text-[10.5px] font-bold text-[#1A172B] hover:bg-[#5E45F8] hover:text-white"
-                        >
-                          插图层
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onMutateBg((b) => ({ ...b, kind: 'image', url: wp.url, fit: 'cover' }), `背景「${wp.name}」`)
-                          }
-                          className="flex-1 rounded-md bg-[#5E45F8] py-1 text-[10.5px] font-bold text-white hover:bg-[#4D34E6]"
-                        >
-                          设背景
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {imgSource === 'library' && (
-              <div className="grid grid-cols-2 gap-2">
-                {themes
-                  .filter((t) => t.imageUrl)
-                  .map((t) => (
-                    <div
-                      key={t.id}
-                      className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-[#E6E4F2] bg-[#100D20] transition-all hover:border-[#5E45F8] hover:shadow-[0_6px_16px_rgba(94,69,248,0.14)]"
-                    >
-                      <img
-                        src={t.imageUrl}
-                        alt={t.displayName}
-                        className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/85 via-black/35 to-black/15 p-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        <div className="truncate text-[11px] font-bold text-white drop-shadow">
-                          {t.displayName}
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const dims = await readImageDimensions(t.imageUrl!);
-                              const box = computeImportMediaBox(dims.w, dims.h, layoutSize[0], layoutSize[1]);
-                              onInsertElements(
-                                [
-                                  makeElement('image', {
-                                    src: t.imageUrl!,
-                                    w: box.w,
-                                    h: box.h,
-                                    ar: box.ar,
-                                    size: box.size,
-                                    fit: box.fit,
-                                    sourceMeta: {
-                                      origin: 'library',
-                                      name: t.displayName,
-                                      naturalWidth: dims.w,
-                                      naturalHeight: dims.h,
-                                    },
-                                  }),
-                                ],
-                                t.displayName
-                              );
-                            }}
-                            className="flex-1 rounded-md bg-white/92 py-1 text-[10.5px] font-bold text-[#1A172B] hover:bg-[#5E45F8] hover:text-white"
-                          >
-                            插图层
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onMutateBg(
-                                (b) => ({ ...b, kind: 'image', url: t.imageUrl!, fit: 'cover' }),
-                                `背景「${t.displayName}」`
-                              )
-                            }
-                            className="flex-1 rounded-md bg-[#5E45F8] py-1 text-[10.5px] font-bold text-white hover:bg-[#4D34E6]"
-                          >
-                            设背景
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            {imgSource === 'local' && (
-              <button
-                type="button"
-                onClick={() => onTriggerLocalUpload('el')}
-                className="w-full rounded-xl border border-dashed border-[#DAD6F0] bg-[#F8F7FC] p-5 text-center text-[11.5px] text-[#6B6880] transition-colors hover:border-[#5E45F8] hover:text-[#5E45F8]"
-              >
-                <ImageIcon className="mx-auto mb-2 h-6 w-6 text-[#5E45F8]" />
-                <div className="font-semibold">点击上传或拖拽图片至画布</div>
-              </button>
-            )}
-          </div>
-        )}
 
         {/* 6. TIME PANEL (Visual Split Time Modules + Clock Presets) */}
         {activeTab === 'time' && (
@@ -1816,6 +1608,14 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
         {/* 7. MOTION PANEL (Live Motion Stage Cards) */}
         {activeTab === 'motion' && (
           <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => onTriggerLocalUpload('bg')}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#5E45F8] bg-[#EFEBFD]/55 py-2 text-[12px] font-semibold text-[#5E45F8] hover:bg-[#EFEBFD]"
+            >
+              <Video className="h-3.5 w-3.5" />
+              <span>导入视频背景</span>
+            </button>
             <div className="grid grid-cols-2 gap-2">
               {MOTION_PRESETS.map((mo) => (
                 <button
@@ -1876,14 +1676,6 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => onTriggerLocalUpload('bg')}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#5E45F8] bg-[#EFEBFD]/55 py-2 text-[12px] font-semibold text-[#5E45F8] hover:bg-[#EFEBFD]"
-            >
-              <Video className="h-3.5 w-3.5" />
-              <span>导入视频背景</span>
-            </button>
           </div>
         )}
 
@@ -1896,7 +1688,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                 type="text"
                 value={widgetQuery}
                 onChange={(e) => setWidgetQuery(e.target.value)}
-                placeholder="搜索进度条、系统监控、天气、频谱…"
+                placeholder="搜索时钟、性能条、频谱、番茄钟、气象、便签…"
                 className="w-full rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] py-1.5 pl-8 pr-3 text-[12px] focus:border-[#5E45F8] focus:bg-white focus:outline-none"
               />
             </div>
@@ -1918,6 +1710,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                   h: 74,
                   accentColor: w.defaultAccent,
                   label: w.name,
+                  ...(w.defaultProps ?? {}),
                 });
                 return (
                   <div
@@ -1953,6 +1746,7 @@ export const EditorLeftPanel: React.FC<EditorLeftPanelProps> = ({
                                 h: isPortrait ? Math.round(w.defaultH * 0.45) : w.defaultH,
                                 accentColor: w.defaultAccent,
                                 label: w.name,
+                                ...(w.defaultProps ?? {}),
                               }),
                             ],
                             `组件「${w.name}」`

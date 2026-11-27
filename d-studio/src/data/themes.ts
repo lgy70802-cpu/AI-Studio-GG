@@ -130,8 +130,8 @@ export interface ScheduleRule {
   enabled: boolean;
 }
 
-export type PluginCategory = '时间组件' | '系统监控' | '媒体联动' | '效率工具' | '生活资讯';
-export type PluginPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+export type PluginCategory = '时间组件' | '系统监控' | '媒体联动' | '效率工具' | '生活资讯' | '互动娱乐';
+export type PluginPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'full';
 export type PluginScale = 'compact' | 'standard' | 'large';
 
 export interface PluginConfig {
@@ -153,6 +153,40 @@ export interface PluginConfig {
   city?: string;
   showAqi?: boolean;
   noteText?: string;
+  fishCount?: number;
+  bubbleSpeed?: number;
+  causticsIntensity?: number;
+  showAquariumClock?: boolean;
+  stockSymbol?: 'NVDA' | 'AAPL' | 'BTC' | 'ETH';
+  songTitle?: string;
+  artist?: string;
+  nixieHue?: 'amber' | 'cyan' | 'green' | 'white';
+  petName?: string;
+  petSpecies?: 'mochi' | 'pixel-bot' | 'shiba';
+  petMood?: 'happy' | 'chill' | 'focus';
+  flameIntensity?: 'low' | 'medium' | 'high';
+  emberDensity?: 'low' | 'medium' | 'high';
+  showSoundHint?: boolean;
+  bonsaiSpecies?: 'pine' | 'succulent' | 'sakura';
+  growthDays?: number;
+  sunlightTone?: 'warm' | 'cool' | 'mist';
+  flipShellStyle?: 'obsidian' | 'warmwood' | 'titanium';
+  vuBacklight?: 'warm-amber' | 'emerald' | 'ice-blue';
+  vuSensitivity?: 'smooth' | 'balanced' | 'punchy';
+  deckLabel?: string;
+  cassetteShell?: 'smoke' | 'amber' | 'indigo';
+  tapeSpeed?: number;
+  zodiacSign?: 'aries' | 'taurus' | 'gemini' | 'cancer' | 'leo' | 'virgo' | 'libra' | 'scorpio' | 'sagittarius' | 'capricorn' | 'aquarius' | 'pisces';
+  showConstellationGlow?: boolean;
+  parcelName?: string;
+  carrier?: string;
+  parcelStage?: 'collected' | 'transit' | 'delivering' | 'delivered';
+  milestoneTitle?: string;
+  targetDays?: number;
+  countMode?: 'countdown' | 'countup';
+  targetDateLabel?: string;
+  unitMode?: 'Mbps' | 'MB/s';
+  showPingChart?: boolean;
 }
 
 export interface PluginItem {
@@ -735,6 +769,289 @@ export const INITIAL_PLUGINS: PluginItem[] = [
       opacity: 78,
       scale: 'standard',
       noteText: '完成 D92 视觉方案评审 · 19:00',
+    },
+  },
+
+  {
+    id: 'plg-craft-aquarium',
+    name: '水族箱生态 (craft-aquarium)',
+    description: '原生动力学微生态水族箱：实时热带鱼群游弋、水中焦散光斑、上升气泡与点击投喂互动。',
+    category: '互动娱乐',
+    version: 'v1.2.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#38BDF8',
+      opacity: 90,
+      scale: 'standard',
+      fishCount: 7,
+      causticsIntensity: 0.6,
+      bubbleSpeed: 1.0,
+      showAquariumClock: true,
+    },
+  },
+  {
+    id: 'plg-craft-stocks',
+    name: '金融脉动 (craft-stocks)',
+    description: '实时市场脉搏仪表板：支持 NVDA、AAPL、BTC、ETH 多标的切换、SVG 分时趋势曲线与 24H 极值监测。',
+    category: '生活资讯',
+    version: 'v1.4.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#10B981',
+      opacity: 88,
+      scale: 'standard',
+      stockSymbol: 'NVDA',
+    },
+  },
+  {
+    id: 'plg-craft-lyrics',
+    name: '霓虹歌词 (craft-lyrics)',
+    description: 'Synthwave 霓虹黑胶视觉卡片：黑胶旋转封面、中英双语逐行高亮歌词与音频律动频谱柱。',
+    category: '媒体联动',
+    version: 'v1.5.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#EC4899',
+      opacity: 88,
+      scale: 'standard',
+      songTitle: 'Midnight City',
+      artist: 'M83',
+      barCount: 20,
+    },
+  },
+  {
+    id: 'plg-craft-nixie',
+    name: 'IN-14 辉光管时钟',
+    description: '经典拟物 IN-14 真空辉光管时计：玻璃反光灯罩、金属丝网纹理与多色灯丝辉光脉冲。',
+    category: '时间组件',
+    version: 'v1.3.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#F59E0B',
+      opacity: 92,
+      scale: 'standard',
+      nixieHue: 'amber',
+      showSeconds: true,
+      showDate: true,
+      use24Hour: true,
+    },
+  },
+  {
+    id: 'plg-craft-cyber-pet',
+    name: '赛博电子萌宠',
+    description: '桌面治愈电子宠物伙伴：动态呼吸眨眼动画、元气能量条及多种萌宠形态与心情状态切换。',
+    category: '互动娱乐',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#F472B6',
+      opacity: 90,
+      scale: 'standard',
+      petName: 'Mochi',
+      petSpecies: 'mochi',
+      petMood: 'happy',
+    },
+  },
+  {
+    id: 'plg-craft-campfire',
+    name: '深夜暖炉篝火',
+    description: '实时 2D Canvas 粒子动态火焰与上升余烬火星，为夜间桌搭营造温暖治愈氛围。',
+    category: '互动娱乐',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#F59E0B',
+      opacity: 92,
+      scale: 'standard',
+      flameIntensity: 'medium',
+      emberDensity: 'medium',
+      showSoundHint: true,
+    },
+  },
+  {
+    id: 'plg-craft-bonsai',
+    name: '微景观桌面盆栽',
+    description: '暗黑静谧系桌面矢量盆景，支持青松/玉露多肉/春樱品种切换、日光色温调节与养护天数记录。',
+    category: '互动娱乐',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#10B981',
+      opacity: 90,
+      scale: 'standard',
+      bonsaiSpecies: 'pine',
+      growthDays: 28,
+      sunlightTone: 'warm',
+    },
+  },
+  {
+    id: 'plg-craft-flip-clock',
+    name: '机械翻页大时钟',
+    description: '经典拟物分体机械翻页卡片时钟，配备金属铰链倒角光影、等宽数字与多款材质外壳。',
+    category: '时间组件',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#5E45F8',
+      opacity: 92,
+      scale: 'standard',
+      flipShellStyle: 'obsidian',
+      showSeconds: true,
+      showDate: true,
+      use24Hour: true,
+    },
+  },
+  {
+    id: 'plg-craft-vu-meter',
+    name: '双通道模拟 VU 电平表',
+    description: '复古双声道指针式音频电平仪表盘，指针随音频波形灵动摆动并配备峰值红灯警示。',
+    category: '媒体联动',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#F59E0B',
+      opacity: 92,
+      scale: 'standard',
+      vuBacklight: 'warm-amber',
+      vuSensitivity: 'balanced',
+      deckLabel: 'MASTER STEREO',
+    },
+  },
+  {
+    id: 'plg-craft-cassette',
+    name: '复古磁带卡座',
+    description: '透明视窗卡带播放器卡片：双卷轴匀速旋转、手写贴纸风曲目标签与多款透明外壳配色。',
+    category: '媒体联动',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#38BDF8',
+      opacity: 90,
+      scale: 'standard',
+      songTitle: 'City Pop Tape #04',
+      artist: 'SIDE A · 90MIN',
+      cassetteShell: 'smoke',
+      tapeSpeed: 1.0,
+    },
+  },
+  {
+    id: 'plg-craft-zodiac',
+    name: '今日星座能量签',
+    description: '暗黑星图毛玻璃罗盘卡片：支持 12 星座实时切换，展示星象连线、幸运色及每日专注/幸运指数。',
+    category: '生活资讯',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#A78BFA',
+      opacity: 88,
+      scale: 'standard',
+      zodiacSign: 'aquarius',
+      showConstellationGlow: true,
+    },
+  },
+  {
+    id: 'plg-craft-parcel',
+    name: '快递物流追踪卡',
+    description: '四段式物流节点追踪条，清晰展示包裹揽收、干线运输、派送中到签收状态与承运商信息。',
+    category: '生活资讯',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#38BDF8',
+      opacity: 88,
+      scale: 'standard',
+      parcelName: '客制化机械键盘套件',
+      carrier: '顺丰速运',
+      parcelStage: 'delivering',
+    },
+  },
+  {
+    id: 'plg-craft-milestone',
+    name: '纪念日倒数日历',
+    description: '带环形进度徽章的高对比度倒数/正数纪念日卡片，适合项目上线冲刺、考试或重要周年提醒。',
+    category: '效率工具',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#F59E0B',
+      opacity: 90,
+      scale: 'standard',
+      milestoneTitle: '年度版本发布',
+      targetDays: 18,
+      countMode: 'countdown',
+      targetDateLabel: '2026.12.15',
+    },
+  },
+  {
+    id: 'plg-craft-netradar',
+    name: '实时网速雷达',
+    description: '实时上下行速率等宽数字监测仪，搭配动态带宽波形折线图与网络节点延迟指示。',
+    category: '系统监控',
+    version: 'v1.0.0',
+    author: 'Craft 生态馆',
+    supportedOrientations: ['landscape', 'portrait'],
+    installed: true,
+    enabled: false,
+    config: {
+      position: 'full',
+      accentColor: '#10B981',
+      opacity: 88,
+      scale: 'standard',
+      unitMode: 'Mbps',
+      refreshSeconds: 2,
+      showPingChart: true,
     },
   },
 ];

@@ -118,6 +118,55 @@
   50% { background-position: 100% 50%; }
 }
 
+@keyframes teMeteor {
+  0% { transform: translate3d(-25%, -25%, 0) rotate(-28deg); opacity: 0; }
+  12% { opacity: 1; }
+  75% { opacity: 0.9; }
+  100% { transform: translate3d(145%, 145%, 0) rotate(-28deg); opacity: 0; }
+}
+
+@keyframes teRainDrop {
+  0% { transform: translateY(-110%); opacity: 0; }
+  18% { opacity: 0.95; }
+  85% { opacity: 0.85; }
+  100% { transform: translateY(155%); opacity: 0; }
+}
+
+@keyframes teScanSweep {
+  0% { top: -8%; opacity: 0; }
+  12% { opacity: 0.95; }
+  88% { opacity: 0.95; }
+  100% { top: 106%; opacity: 0; }
+}
+
+@keyframes teRippleOut {
+  0% { transform: scale(0.22); opacity: 0.9; }
+  70% { opacity: 0.45; }
+  100% { transform: scale(1.32); opacity: 0; }
+}
+
+@keyframes teWaveSlide {
+  0%, 100% { transform: translateX(-10%) translateY(-4%) rotate(-8deg) scaleX(1.05); opacity: 0.62; }
+  50% { transform: translateX(10%) translateY(6%) rotate(-5deg) scaleX(1.16); opacity: 0.95; }
+}
+
+@keyframes teTwinkle {
+  0%, 100% { transform: scale(0.65); opacity: 0.25; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+
+@keyframes teFirefly {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.85); opacity: 0.35; }
+  33% { transform: translate3d(14px, -10px, 0) scale(1.15); opacity: 0.95; }
+  66% { transform: translate3d(-10px, 8px, 0) scale(0.95); opacity: 0.7; }
+}
+
+@keyframes teBeamSweep {
+  0% { transform: translateX(-140%) skewX(-22deg); opacity: 0.3; }
+  45% { opacity: 0.9; }
+  100% { transform: translateX(240%) skewX(-22deg); opacity: 0.3; }
+}
+
 
 /* Let the workspace header act as the native window caption. */
 .desktop-titlebar { app-region: drag; }

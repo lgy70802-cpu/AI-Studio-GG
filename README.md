@@ -18,9 +18,9 @@
 
 ## Windows 内测安装版
 
-当前安装测试版为 0.2.14，使用 Windows 10 2004 或以上版本的 x64 系统。安装包内置 .NET 运行时和 VC++ x64 安装程序，缺少 VC++ 运行库时申请系统安装授权。安装时检测 WebView2；缺失时使用微软引导程序联网安装。安装程序为未签名内测版。
+当前安装测试版为 0.2.16，使用 Windows 10 2004 或以上版本的 x64 系统。安装包内置 .NET 运行时和 VC++ x64 安装程序，缺少 VC++ 运行库时申请系统安装授权。安装时检测 WebView2；缺失时使用微软引导程序联网安装。安装程序为未签名内测版。
 
-运行 `artifacts/release/0.2.14/MiraBoxStudioNext-0.2.14-win-x64-Setup.exe`，首次安装默认按当前用户安装到 `%LOCALAPPDATA%/Programs/小屏宝PixBuddy`，已有安装沿用原目录。选择“为所有用户安装”时申请管理员权限，支持 Program Files 等系统目录。安装器提前检查目标目录的写入权限，并创建开始菜单与桌面快捷方式。卸载保留 `%LOCALAPPDATA%/MiraBoxStudio.Next` 中的用户工程和素材。
+运行 `artifacts/release/0.2.16/MiraBoxStudioNext-0.2.16-win-x64-Setup.exe`，首次安装默认按当前用户安装到 `%LOCALAPPDATA%/Programs/小屏宝PixBuddy`，已有安装沿用原目录。选择“为所有用户安装”时申请管理员权限，支持 Program Files 等系统目录。安装器提前检查目标目录的写入权限，并创建开始菜单与桌面快捷方式。卸载保留 `%LOCALAPPDATA%/MiraBoxStudio.Next` 中的用户工程和素材。
 
 构建安装包需要 Inno Setup 6 编译器，运行 `./package-release.ps1`，或通过 `-Iscc` 指定编译器路径。脚本检查微软引导程序签名，清理对应版本的构建输出后重新发布。安装测试和现场待验项目见 [发布验收记录](docs/RELEASE_TESTING.md)。
 

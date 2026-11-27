@@ -32,7 +32,15 @@ export type MotionEffectKind =
   | 'float'
   | 'rotate'
   | 'fade'
-  | 'gif-sticker';
+  | 'gif-sticker'
+  | 'meteor'
+  | 'matrix-rain'
+  | 'scanline'
+  | 'ripple'
+  | 'aurora-ribbon'
+  | 'starfield'
+  | 'firefly'
+  | 'prism-beams';
 
 export type WidgetTypeKind =
   | 'progress'
@@ -42,7 +50,13 @@ export type WidgetTypeKind =
   | 'weather'
   | 'sysmon'
   | 'audio-spectrum'
-  | 'mini-chart';
+  | 'mini-chart'
+  | 'clock-widget'
+  | 'telemetry-bar'
+  | 'audio-rhythm'
+  | 'pomodoro-widget'
+  | 'weather-capsule'
+  | 'sticky-note';
 
 export type PluginCapabilityKey =
   | 'music-info'
@@ -55,7 +69,18 @@ export type PluginCapabilityKey =
   | 'countdown-timer'
   | 'todo-list'
   | 'desktop-aquarium'
-  | 'desktop-pet';
+  | 'desktop-pet'
+  | 'nixie-clock'
+  | 'cyber-pet'
+  | 'campfire'
+  | 'zen-bonsai'
+  | 'flip-clock'
+  | 'vu-meter'
+  | 'cassette-deck'
+  | 'zodiac-oracle'
+  | 'parcel-tracker'
+  | 'milestone-days'
+  | 'net-radar';
 
 export interface EditorElementBase {
   id: string;
@@ -221,6 +246,18 @@ export interface WidgetElement extends EditorElementBase {
   targetLabel?: string;
   city?: string;
   barCount?: number;
+  showSeconds?: boolean;
+  showDate?: boolean;
+  use24Hour?: boolean;
+  showTemp?: boolean;
+  showMemory?: boolean;
+  refreshSeconds?: number;
+  showTrackName?: boolean;
+  trackName?: string;
+  focusMinutes?: number;
+  breakMinutes?: number;
+  showAqi?: boolean;
+  noteText?: string;
 }
 
 export interface PluginElement extends EditorElementBase {
@@ -440,19 +477,18 @@ export interface WidgetCapabilityDescriptor {
   defaultW: number;
   defaultH: number;
   defaultAccent: string;
+  defaultProps?: Partial<WidgetElement>;
 }
 
 export type EditorRailTab =
   | 'add'
   | 'templates'
   | 'assets'
-  | 'text'
-  | 'images'
   | 'time'
+  | 'background'
   | 'motion'
   | 'widgets'
   | 'plugins'
-  | 'background'
   | 'layers';
 
 export interface EditorToolMetadata {

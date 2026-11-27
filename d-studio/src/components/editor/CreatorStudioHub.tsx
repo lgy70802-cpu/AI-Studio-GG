@@ -26,11 +26,13 @@ import { DeviceInfo, ThemeItem } from '../../data/themes';
 import {
   BUILTIN_TEMPLATES,
   BuiltinTemplateSpec,
+  EDITOR_DEVICE_SPECS,
   availableEditorSpecs,
   createBlankEditorProject,
   ensureEditorProjectFromTheme,
   genEditorId,
   makeElement,
+  specMatchesDeviceModel,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
 import { EditorThemeProject, THEME_SCHEMA_VERSION } from '../../types/editor';
@@ -80,10 +82,18 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
         : 'd92-land'
   );
   useEffect(() => {
-    const preferred = availableSpecs.find(spec => spec.deviceModel.startsWith(activeDevice.model) &&
-      (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')) ?? availableSpecs[0];
-    setSelectedSpecId(preferred.id);
-  }, [activeDevice.id, activeDevice.orientation, specKey]);
+    const preferred =
+      availableSpecs.find(
+        (spec) =>
+          specMatchesDeviceModel(spec, activeDevice.model) &&
+          (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')
+      ) ??
+      availableSpecs[0] ??
+      EDITOR_DEVICE_SPECS[0];
+    if (preferred) {
+      setSelectedSpecId(preferred.id);
+    }
+  }, [activeDevice.id, activeDevice.model, activeDevice.orientation, specKey]);
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
   const [heroMenuOpen, setHeroMenuOpen] = useState(false);
   const [previewBuiltin, setPreviewBuiltin] = useState<BuiltinTemplateSpec | null>(null);
@@ -108,7 +118,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
   const heroMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedSpec =
-    availableSpecs.find((s) => s.id === selectedSpecId) ?? availableSpecs[0];
+    availableSpecs.find((s) => s.id === selectedSpecId) ?? availableSpecs[0] ?? EDITOR_DEVICE_SPECS[0];
   const previewWidth = selectedSpec.id.startsWith('d69') ? 1280 : 1920;
   const previewHeight = selectedSpec.id.startsWith('d69') ? 480 : 462;
 
@@ -295,7 +305,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
       <input
         ref={jsonImportRef}
         type="file"
-        accept=".json,.d92theme.json"
+        accept=".json,.d69theme.json,.d92theme.json,.pixbuddytheme.json"
         className="hidden"
         onChange={handleImportProjectJson}
       />
@@ -703,6 +713,13 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
             {filteredCustomThemes.map((item) => {
               const isCurrent = item.id === activeTheme.id;
               const isPort = item.orientation === 'portrait';
+              const declaredSize = item.resolution.match(/\d+/g)?.map(Number);
+              const previewLayout = item.editorProject?.layouts.find(layout =>
+                layout.size[0] === declaredSize?.[0] && layout.size[1] === declaredSize?.[1]
+              ) ?? item.editorProject?.layouts.find(layout => (layout.size[0] < layout.size[1]) === isPort)
+                ?? item.editorProject?.layouts[0];
+              const previewSize = previewLayout?.size ?? declaredSize ?? [activeDevice.nativeWidth, activeDevice.nativeHeight];
+              const previewLayoutIndex = previewLayout ? item.editorProject!.layouts.indexOf(previewLayout) : undefined;
               const cloudUpd = item.editorProject?.cloudTemplateId
                 ? updatesMap[item.editorProject.cloudTemplateId]
                 : undefined;
@@ -719,12 +736,14 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                   <div
                     className="overflow-hidden rounded-xl bg-[#120733]"
                     style={{
-                      aspectRatio: isPort ? '462 / 1920' : '1920 / 462',
+                      aspectRatio: `${previewSize[0]} / ${previewSize[1]}`,
+                      width: isPort ? `${170 * previewSize[0] / previewSize[1]}px` : undefined,
                       maxHeight: isPort ? '170px' : undefined,
                     }}
                   >
                     <ThemeArtwork
                       theme={item}
+                      layoutIndex={previewLayoutIndex}
                       className="h-full w-full"
                       showClock={true}
                       liveTick={true}
