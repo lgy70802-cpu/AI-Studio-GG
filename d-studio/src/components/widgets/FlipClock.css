@@ -1,0 +1,35 @@
+.pixbuddy-flip-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: .14em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.pixbuddy-flip-group { display: inline-flex; gap: .06em; }
+.pixbuddy-flip-card {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: .82em;
+  height: 1.18em;
+  border-radius: .12em;
+  background: linear-gradient(to bottom, #ffffff24 49%, #00000028 50%, #ffffff18 52%);
+  box-shadow: inset 0 1px 0 #ffffff20, 0 .04em .08em #00000030;
+  overflow: hidden;
+  perspective: 4em;
+}
+.pixbuddy-flip-card > span { display: block; }
+.pixbuddy-flip-digit { animation: pixbuddy-flip-in 220ms ease-out; }
+.pixbuddy-flip-separator { opacity: .7; }
+.pixbuddy-flip-seconds { font-size: .55em; }
+.pixbuddy-flip-period { font-size: .25em; opacity: .8; }
+.pixbuddy-flip-clock-portrait { flex-direction: column; }
+.pixbuddy-flip-clock-portrait .pixbuddy-flip-separator { display: none; }
+@keyframes pixbuddy-flip-in {
+  from { transform: rotateX(-75deg); opacity: .45; }
+  to { transform: rotateX(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pixbuddy-flip-digit { animation: none; }
+}

@@ -1,4 +1,4 @@
-param([string]$Version = '0.2.13', [string]$Iscc, [string]$UpdateBaseUrl, [string]$ReleaseNotesFile)
+param([string]$Version = '0.2.14', [string]$Iscc, [string]$UpdateBaseUrl, [string]$ReleaseNotesFile)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must have the form 0.2.0' }
 Push-Location $PSScriptRoot

@@ -135,6 +135,7 @@ export type PluginPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-
 export type PluginScale = 'compact' | 'standard' | 'large';
 
 export interface PluginConfig {
+  clockStyle?: 'digital' | 'flip';
   position: PluginPosition;
   accentColor: string;
   opacity: number;

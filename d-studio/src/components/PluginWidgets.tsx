@@ -1,3 +1,4 @@
+import { FlipClock } from './widgets/FlipClock';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CloudSun,
@@ -108,6 +109,12 @@ export const PluginWidgetCard: React.FC<PluginWidgetCardProps> = ({
           compact ? 'px-2.5 py-1.5' : 'px-3.5 py-2'
         }`}
       >
+        {config.clockStyle === 'flip' ? (
+          <div style={{ fontSize: compact ? 15 : 20, fontWeight: 700 }}>
+            <FlipClock hours={formatPad(displayHours)} minutes={formatPad(now.getMinutes())} seconds={secondsStr}
+              showSeconds={config.showSeconds !== false} period={use24 ? undefined : ampm} portrait={portrait} animate={false} />
+          </div>
+        ) : (
         <div className="flex items-baseline gap-1.5">
           <span
             className={`font-mono-tabular font-bold tracking-tight ${
@@ -130,6 +137,7 @@ export const PluginWidgetCard: React.FC<PluginWidgetCardProps> = ({
             <span className="text-[10px] font-semibold text-white/70">{ampm}</span>
           )}
         </div>
+        )}
         {config.showDate !== false && (
           <div className="mt-0.5 font-mono-tabular text-[10px] font-medium text-white/75">
             {dateLine}

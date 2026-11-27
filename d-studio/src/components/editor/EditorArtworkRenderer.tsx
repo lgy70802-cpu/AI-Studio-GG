@@ -1,3 +1,4 @@
+import { FlipClock } from '../widgets/FlipClock';
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
@@ -1246,32 +1247,9 @@ export const EditorArtworkRenderer: React.FC<EditorArtworkRendererProps> = ({
               ) : el.part === 'second' ? (
                 <span className="font-mono-tabular">{ss}</span>
               ) : el.style === 'flip' ? (
-                <div className={`flex items-center gap-[0.14em] ${portrait ? 'flex-col' : ''}`}>
-                  <span className="inline-flex gap-[0.06em]">
-                    {[...hh].map((ch, i) => (
-                      <i
-                        key={i}
-                        className="not-italic rounded-[0.12em] bg-white/15 px-[0.22em] py-[0.06em] shadow-inner"
-                      >
-                        {ch}
-                      </i>
-                    ))}
-                  </span>
-                  {!portrait && <span className="opacity-70">:</span>}
-                  <span className="inline-flex gap-[0.06em]">
-                    {[...mm].map((ch, i) => (
-                      <i
-                        key={i}
-                        className="not-italic rounded-[0.12em] bg-white/15 px-[0.22em] py-[0.06em] shadow-inner"
-                      >
-                        {ch}
-                      </i>
-                    ))}
-                  </span>
-                  {el.sec && (
-                    <span className="ml-[0.18em] text-[0.42em] opacity-80">{ss}</span>
-                  )}
-                </div>
+                <FlipClock hours={hh} minutes={mm} seconds={ss}
+                  showSeconds={el.sec && el.part !== 'hm'} period={el.h24 ? undefined : ap}
+                  portrait={portrait} animate={liveTick && !paused} />
               ) : (
                 <div className={`flex items-baseline gap-[0.15em] ${portrait ? 'flex-col items-center leading-none' : ''}`}>
                   <span>

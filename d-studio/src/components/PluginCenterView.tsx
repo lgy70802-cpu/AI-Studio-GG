@@ -820,6 +820,14 @@ export const PluginCenterView: React.FC<PluginCenterViewProps> = ({
                 />
               </div>
 
+              {editingPlugin.id === 'plg-clock' && <label className="flex items-center justify-between text-[12.5px] font-semibold">
+                时钟样式
+                <select aria-label="时钟样式" className="rounded-xl border border-[#E6E4F2] bg-white px-3 py-2"
+                  value={draftConfig.clockStyle ?? 'digital'}
+                  onChange={event => setDraftConfig({ ...draftConfig, clockStyle: event.target.value as 'digital' | 'flip' })}>
+                  <option value="digital">数字时钟</option><option value="flip">翻页时钟</option>
+                </select>
+              </label>}
               {/* Plugin-Specific Settings */}
               <div className="space-y-3 border-t border-[#F1EFF8] pt-4">
                 <div className="text-[12.5px] font-bold text-[#1A172B]">插件专属参数</div>

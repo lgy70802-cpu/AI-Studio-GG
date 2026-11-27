@@ -53,7 +53,7 @@ public sealed partial class StudioWindow : Window
         LoadSchedules();
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnSystemPower;
         Title = "小屏宝PixBuddy";
-        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/PixBuddy.ico"));
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/MiraBox.App;component/Assets/PixBuddy.ico"));
         Width = 1440; Height = 940; MinWidth = 720; MinHeight = 640;
         InitializeWindowFrame();
         Loaded += async (_, _) =>
