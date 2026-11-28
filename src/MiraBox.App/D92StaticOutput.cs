@@ -338,6 +338,11 @@ internal sealed partial class D92StaticOutput : IDisposable
     public UsbVideoPreferences ActiveVideoProfile => Volatile.Read(ref activeVideoProfile);
 
     public void ReplaceFrame(byte[] bytes) => SubmitStill(bytes, null, "wallpaper");
+    internal const int MaxLiveFps = 30;
+    double lastWriteMilliseconds;
+    long distinctLiveFrames;
+    internal long DistinctLiveFrames => Interlocked.Read(ref distinctLiveFrames);
+    internal double LastWriteMilliseconds => Volatile.Read(ref lastWriteMilliseconds);
     internal int LiveFramesPerSecond { get; set; } = 1;
 
     public bool RefreshStill(Guid id, byte[] jpeg)
@@ -465,13 +470,23 @@ internal sealed partial class D92StaticOutput : IDisposable
             double pacingMs = 0, decodeTotal = 0, compositionTotal = 0, rotationTotal = 0, jpegTotal = 0,
                 usbTotal = 0, pacingTotal = 0, byteTotal = 0;
             int performanceSamples = 0;
+            long lastMeasuredDelivery = 0;
+            double maxFrameIntervalMs = 0;
             bool transportBlocked = false;
+            byte[]? displayFrame = null, previousLiveFrame = null;
             var previousFrames = Frames;
             var previousConnections = Connections;
             sender.FrameCompleted += result =>
             {
                 Interlocked.Exchange(ref frames, previousFrames + result.Frame);
+                Volatile.Write(ref lastWriteMilliseconds, result.WriteMilliseconds);
                 if (rendered == null) return;
+                if (path == null && LiveFramesPerSecond > 1 && displayFrame is { } deliveredFrame &&
+                    !ReferenceEquals(previousLiveFrame, deliveredFrame))
+                {
+                    previousLiveFrame = deliveredFrame;
+                    Interlocked.Increment(ref distinctLiveFrames);
+                }
                 if (rendered.Id != lastWritten)
                 {
                     lastWritten = rendered.Id;
@@ -490,8 +505,14 @@ internal sealed partial class D92StaticOutput : IDisposable
                     if (VideoPaused || decoderPaused) {
                         rate.Reset(); performanceSamples = 0;
                         decodeTotal = compositionTotal = rotationTotal = jpegTotal = usbTotal = pacingTotal = byteTotal = 0;
+                        lastMeasuredDelivery = 0;
+                        maxFrameIntervalMs = 0;
                         return;
                     }
+                    var deliveredAt = Stopwatch.GetTimestamp();
+                    if (lastMeasuredDelivery != 0)
+                        maxFrameIntervalMs = Math.Max(maxFrameIntervalMs, Stopwatch.GetElapsedTime(lastMeasuredDelivery, deliveredAt).TotalMilliseconds);
+                    lastMeasuredDelivery = deliveredAt;
                     var stages = deliveredTiming?.Stages;
                     performanceSamples++;
                     decodeTotal += deliveredTiming?.DecodeMilliseconds ?? 0;
@@ -512,8 +533,10 @@ internal sealed partial class D92StaticOutput : IDisposable
                         VideoPerformance?.Invoke(new(DateTimeOffset.Now, Serial, rendered.Name, profile.FramesPerSecond,
                             measured.EffectiveFps, measured.ActualFps, performanceSamples, decodeTotal / performanceSamples,
                             compositionTotal / performanceSamples, rotationTotal / performanceSamples, jpegTotal / performanceSamples,
-                            usbTotal / performanceSamples, pacingTotal / performanceSamples, byteTotal / performanceSamples));
+                            usbTotal / performanceSamples, pacingTotal / performanceSamples, byteTotal / performanceSamples,
+                            maxFrameIntervalMs, deliveredTiming?.MediaPosition.TotalSeconds));
                         performanceSamples = 0;
+                        maxFrameIntervalMs = 0;
                         decodeTotal = compositionTotal = rotationTotal = jpegTotal = usbTotal = pacingTotal = byteTotal = 0;
                     }
                 }
@@ -527,6 +550,8 @@ internal sealed partial class D92StaticOutput : IDisposable
                 {
                     performanceSamples = 0;
                     decodeTotal = compositionTotal = rotationTotal = jpegTotal = usbTotal = pacingTotal = byteTotal = 0;
+                    lastMeasuredDelivery = 0;
+                    maxFrameIntervalMs = 0;
                     rate.Reset();
                     Volatile.Write(ref videoRate, null);
                     lastDelivery = 0;
@@ -547,7 +572,7 @@ internal sealed partial class D92StaticOutput : IDisposable
 
             try
             {
-                using var precision = new VideoTimerResolution(path != null);
+                using var precision = new VideoTimerResolution(path != null || LiveFramesPerSecond > 12);
                 if (path != null)
                 {
                     try
@@ -559,7 +584,7 @@ internal sealed partial class D92StaticOutput : IDisposable
                 }
 
                 await sender.RunAsync(Serial, RenderDisplayFrame,
-                    path == null ? TimeSpan.FromSeconds(1d / Math.Clamp(LiveFramesPerSecond, 1, 12)) : TimeSpan.FromSeconds(1d / profile.FramesPerSecond),
+                    path == null ? TimeSpan.FromSeconds(1d / Math.Clamp(LiveFramesPerSecond, 1, MaxLiveFps)) : TimeSpan.FromSeconds(1d / profile.FramesPerSecond),
                     session.Token).ConfigureAwait(false);
                 if (transportBlocked) break;
                 if (!session.IsCancellationRequested) break;
@@ -598,9 +623,9 @@ internal sealed partial class D92StaticOutput : IDisposable
                 {
                     lock (gate) rendered = submission;
                     await Task.Delay(1000, token).ConfigureAwait(false);
-                    return DisplayFrame(CurrentStill, true);
+                    return displayFrame = DisplayFrame(CurrentStill, true);
                 }
-                return DisplayFrame(await RenderFrame(token).ConfigureAwait(false), false);
+                return displayFrame = DisplayFrame(await RenderFrame(token).ConfigureAwait(false), false);
             }
 
             async Task<byte[]> RenderFrame(CancellationToken token)

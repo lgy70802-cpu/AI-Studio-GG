@@ -21,6 +21,7 @@ try {
     if ($LASTEXITCODE) { throw 'Desktop publish failed' }
     New-Item -ItemType Directory -Force (Join-Path $app 'Web') | Out-Null
     Copy-Item d-studio/dist/* (Join-Path $app 'Web') -Recurse -Force
+    & (Join-Path $PSScriptRoot 'packaging/copy-video-converter.ps1') -Destination (Join-Path $app 'VideoConverter')
     $bootstrap = Join-Path $PSScriptRoot 'artifacts/packaging/MicrosoftEdgeWebview2Setup.exe'
     if (!(Test-Path $bootstrap)) {
         New-Item -ItemType Directory -Force (Split-Path $bootstrap) | Out-Null

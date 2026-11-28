@@ -1061,3 +1061,14 @@ export const CraftNixieClockWidget: React.FC<CraftNixieClockWidgetProps> = ({
     </div>
   );
 };
+
+export const FittedNixieClockWidget: React.FC<CraftNixieClockWidgetProps> = (props) => (
+  <div className="relative h-full w-full overflow-hidden bg-[#080705] [container-type:size]">
+    <div
+      className="absolute left-1/2 top-1/2 h-[86px] w-[216px]"
+      style={{ transform: 'translate(-50%, -50%) scale(min(tan(atan2(100cqw, 216px)), tan(atan2(100cqh, 86px))))' }}
+    >
+      <CraftNixieClockWidget {...props} compact />
+    </div>
+  </div>
+);

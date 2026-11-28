@@ -28,6 +28,24 @@ public sealed class CraftPluginStore(string directory)
         return Path.Combine(root, "Packages", entry.PackageDirectory);
     }
 
+    public void Remove(CraftPluginEntry entry)
+    {
+        using var storeLock = new FileStream(Path.Combine(root, ".import.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var remaining = Entries.Where(item => item.Id != entry.Id).ToArray();
+        var package = PackagePath(entry);
+        var temporaryIndex = Index + ".remove.tmp";
+        try
+        {
+            File.WriteAllText(temporaryIndex, JsonSerializer.Serialize(remaining));
+            File.Move(temporaryIndex, Index, true);
+        }
+        finally { File.Delete(temporaryIndex); }
+        // The index is authoritative even if Windows still holds a handle to the package.
+        try { if (Directory.Exists(package)) Directory.Delete(package, true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     public CraftPluginImport ImportWoodland(string selectedDirectory, DateTimeOffset importedAt) => Import(selectedDirectory, importedAt, true);
     public CraftPluginImport Import(string selectedDirectory, DateTimeOffset importedAt, bool woodlandOnly = false)
     {

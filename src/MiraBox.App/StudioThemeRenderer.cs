@@ -1,9 +1,11 @@
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -24,24 +26,38 @@ internal sealed class StudioThemeRenderer : IDisposable
     long lastFrameAt;
     long heartbeat = System.Diagnostics.Stopwatch.GetTimestamp();
     CoreWebView2DevToolsProtocolEventReceiver? screencast;
-    readonly Dispatcher encoder;
-    readonly Thread encoderThread;
     readonly int targetWidth;
     readonly int targetHeight;
-    public StudioThemeRenderer(int width, int height)
+    readonly int rotation;
+    public StudioThemeRenderer(int width, int height, int rotation = 0)
     {
-        targetWidth = width;
-        targetHeight = height;
-        var started = new TaskCompletionSource<Dispatcher>(TaskCreationOptions.RunContinuationsAsynchronously);
-        encoderThread = new Thread(() => { started.SetResult(Dispatcher.CurrentDispatcher); Dispatcher.Run(); }) { IsBackground = true, Name = "MiraBox theme JPEG" };
-        encoderThread.SetApartmentState(ApartmentState.STA); encoderThread.Start(); encoder = started.Task.GetAwaiter().GetResult();
-        window = new Window { Width = width, Height = height, Left = -20000, Top = -20000,
+        this.rotation = rotation;
+        (targetWidth, targetHeight) = rotation is 90 or 270 ? (height, width) : (width, height);
+        view.Width = targetWidth;
+        view.Height = targetHeight;
+        var host = new System.Windows.Controls.Canvas();
+        host.Children.Add(view);
+        window = new Window { Width = targetWidth, Height = targetHeight, Left = -20000, Top = -20000,
             WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
-            ShowInTaskbar = false, ShowActivated = false, Content = view, Title = "MiraBox background renderer" };
+            ShowInTaskbar = false, ShowActivated = false, Content = host, Title = "MiraBox background renderer" };
     }
+
+    [DllImport("user32.dll")]
+    static extern uint GetDpiForWindow(nint hwnd);
+
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
+
     public async Task Initialize(CoreWebView2Environment environment, string mediaRoot, JsonNode theme, bool portrait, int? layoutIndex, CancellationToken cancellationToken = default)
     {
         window.Show();
+        var handle = new WindowInteropHelper(window).Handle;
+        var scale = GetDpiForWindow(handle) / 96d;
+        // Bypass the desktop's maximum tracking size for this offscreen render surface.
+        const uint preservePositionAndActivation = 0x0016;
+        const uint noWindowPosChanging = 0x0400;
+        SetWindowPos(handle, 0, 0, 0, (int)Math.Ceiling(targetWidth * scale), (int)Math.Ceiling(targetHeight * scale),
+            preservePositionAndActivation | noWindowPosChanging);
         await view.EnsureCoreWebView2Async(environment);
         view.CoreWebView2.ProcessFailed += (_, e) => failure = "主题渲染进程中断：" + e.ProcessFailedKind;
         view.CoreWebView2.SetVirtualHostNameToFolderMapping("studio.local", Path.Combine(AppContext.BaseDirectory, "Web"), CoreWebView2HostResourceAccessKind.DenyCors);
@@ -69,7 +85,7 @@ internal sealed class StudioThemeRenderer : IDisposable
             width = targetWidth, height = targetHeight, deviceScaleFactor = 1, mobile = false,
             screenWidth = targetWidth, screenHeight = targetHeight
         })).WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
-        view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { command = "render-theme", token, theme, portrait, layoutIndex }));
+        view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { command = "render-theme", token, theme, portrait, layoutIndex, rotation }));
         await ready.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         try
         {
@@ -93,45 +109,41 @@ internal sealed class StudioThemeRenderer : IDisposable
         catch (Exception) when (disposed) { }
         catch { /* CapturePreview remains available if a runtime drops the event stream. */ }
     }
-    public async Task<BitmapSource> Capture()
+    public BitmapSource DecodePreview(byte[] jpeg)
+    {
+        using var stream = new MemoryStream(jpeg, writable: false);
+        BitmapSource frame = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        if (rotation != 0) frame = new TransformedBitmap(frame, new RotateTransform(360 - rotation));
+        frame.Freeze();
+        return frame;
+    }
+
+    public async Task<byte[]> CaptureJpeg(string transportModel)
     {
         if (disposed) throw new ObjectDisposedException(nameof(StudioThemeRenderer));
         if (failure != null) throw new IOException(failure);
         if (System.Diagnostics.Stopwatch.GetElapsedTime(heartbeat).TotalSeconds > 8) throw new IOException("主题渲染心跳中断，正在重建画布。");
-        using var stream = new MemoryStream();
-        if (latestFrame is { } bytes && System.Diagnostics.Stopwatch.GetElapsedTime(lastFrameAt).TotalSeconds < 2) stream.Write(bytes);
-        else await CaptureTargetFrame(stream);
-        stream.Position = 0;
-        var frame = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-        if (frame.PixelWidth != targetWidth || frame.PixelHeight != targetHeight)
+        if (latestFrame is { } bytes && System.Diagnostics.Stopwatch.GetElapsedTime(lastFrameAt).TotalSeconds < 2)
         {
-            stream.SetLength(0);
-            await CaptureTargetFrame(stream);
-            stream.Position = 0;
-            frame = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-            if (frame.PixelWidth != targetWidth || frame.PixelHeight != targetHeight)
-                throw new IOException("主题渲染尺寸与设备分辨率不一致。");
+            try { D92StaticImage.RequireTransportRaster(bytes, transportModel); return bytes; }
+            catch (InvalidOperationException) { /* Use an exact-size capture if the stream is scaled. */ }
         }
-        frame.Freeze();
-        return frame;
-    }
-    async Task CaptureTargetFrame(Stream stream)
-    {
+
         var response = await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Page.captureScreenshot", JsonSerializer.Serialize(new
         {
             format = "jpeg", quality = 85, captureBeyondViewport = true,
             clip = new { x = 0, y = 0, width = targetWidth, height = targetHeight, scale = 1 }
         })).WaitAsync(TimeSpan.FromSeconds(3));
         using var result = JsonDocument.Parse(response);
-        var bytes = Convert.FromBase64String(result.RootElement.GetProperty("data").GetString()!);
-        await stream.WriteAsync(bytes);
+        var jpeg = Convert.FromBase64String(result.RootElement.GetProperty("data").GetString()!);
+        D92StaticImage.RequireTransportRaster(jpeg, transportModel);
+        return jpeg;
     }
     public Task SetPaused(bool paused)
     {
         view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { command = "render-paused", paused }));
         return Task.CompletedTask;
     }
-    public Task<byte[]> Encode(BitmapSource frame, int rotation, string model) => encoder.InvokeAsync(() => D92StaticImage.Encode(rotation, frame, model)).Task;
     public void Dispose()
     {
         if (disposed) return;
@@ -139,7 +151,5 @@ internal sealed class StudioThemeRenderer : IDisposable
         if (screencast != null) screencast.DevToolsProtocolEventReceived -= OnFrame;
         view.Dispose();
         window.Close();
-        encoder.BeginInvokeShutdown(DispatcherPriority.Background);
-        encoderThread.Join(TimeSpan.FromSeconds(2));
     }
 }

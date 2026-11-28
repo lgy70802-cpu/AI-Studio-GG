@@ -23,7 +23,7 @@ import {
 import {
   CraftAquariumWidget,
   CraftLyricsWidget,
-  CraftNixieClockWidget,
+  FittedNixieClockWidget,
   CraftStocksWidget,
   NixieColorHue,
 } from '../crafts/CraftWidgets';
@@ -1444,11 +1444,11 @@ const PluginNode: React.FC<{ el: PluginElement; tickPhase: number }> = ({ el, ti
         style={boxStyle}
         className="h-full w-full overflow-hidden rounded-[2.6cqmin] border"
       >
-        <CraftNixieClockWidget
-          colorHue={(String(el.config.colorHue || 'amber') as NixieColorHue) || 'amber'}
+        <FittedNixieClockWidget
+          colorHue={String(el.config.nixieHue || el.config.colorHue || 'amber') as NixieColorHue}
           showSeconds={el.config.showSeconds !== false}
           showDate={el.config.showDate !== false}
-          compact={true}
+          use24Hour={el.config.use24Hour !== false}
         />
       </div>
     );

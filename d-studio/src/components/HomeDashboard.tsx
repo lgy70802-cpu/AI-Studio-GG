@@ -178,7 +178,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       <div className="relative z-10 mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3.5 text-[12px] text-white/75">
         <div className="flex items-center gap-2.5 font-mono-tabular">
           <span>{activeTheme.category === '动态时钟' ? '时钟' : activeTheme.category}</span>
-          {activeDevice.renderFps != null && <span>合成 {activeDevice.renderFps.toFixed(1)} FPS</span>}
+          {isPlaying && activeDevice.renderFps != null && activeDevice.renderFps > 0 && <span>合成 {activeDevice.renderFps.toFixed(1)} FPS</span>}
+          {isPlaying && activeDevice.usbFps != null && activeDevice.usbFps > 0 && <span title="USB 写入的不同画面帧率">USB {activeDevice.usbFps.toFixed(1)} FPS</span>}
           {activeDevice.videoDuration != null && <span className="font-mono-tabular">
             {Math.floor(activeDevice.videoPosition ?? 0)} / {Math.round(activeDevice.videoDuration)}s · {(activeDevice.videoFps ?? 0).toFixed(1)} FPS
           </span>}

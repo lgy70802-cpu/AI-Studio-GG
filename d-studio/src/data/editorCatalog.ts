@@ -50,13 +50,28 @@ export function specMatchesDeviceModel(spec: DeviceSpecOption, model: string): b
   return spec.deviceModel.startsWith(m) || m.startsWith(spec.deviceModel);
 }
 
-export function availableEditorSpecs(devices: DeviceInfo[]): DeviceSpecOption[] {
-  const onlineModels = new Set(devices.filter(device => device.status === '已连接').map(device => device.model));
-  if (onlineModels.size === 0) return EDITOR_DEVICE_SPECS;
-  const matched = EDITOR_DEVICE_SPECS.filter(spec =>
-    [...onlineModels].some(model => specMatchesDeviceModel(spec, model))
+export function editorSizeForDevice(device: DeviceInfo): [number, number] {
+  return device.orientation === 'portrait'
+    ? [device.nativeHeight, device.nativeWidth]
+    : [device.nativeWidth, device.nativeHeight];
+}
+
+export function findEditorLayout(layouts: EditorLayout[], [width, height]: [number, number]): number {
+  const exact = layouts.findIndex(layout => layout.size[0] === width && layout.size[1] === height);
+  if (exact >= 0) return exact;
+  return Math.max(0, layouts.findIndex(layout => (layout.size[0] < layout.size[1]) === (width < height)));
+}
+
+export function availableEditorSpecs(devices: DeviceInfo[], activeDevice: DeviceInfo): DeviceSpecOption[] {
+  const activeSpecs = EDITOR_DEVICE_SPECS.filter(spec =>
+    specMatchesDeviceModel(spec, activeDevice.model) ||
+    (Math.max(...spec.size) === activeDevice.nativeWidth && Math.min(...spec.size) === activeDevice.nativeHeight)
   );
-  return matched.length > 0 ? matched : EDITOR_DEVICE_SPECS;
+  const onlineSpecs = EDITOR_DEVICE_SPECS.filter(spec => devices.some(device =>
+    device.status !== '离线' && specMatchesDeviceModel(spec, device.model)
+  ));
+  const choices = [...new Set([...activeSpecs, ...onlineSpecs])];
+  return choices.length ? choices : EDITOR_DEVICE_SPECS;
 }
 
 export function specLabelFromSize(size: [number, number]): string {
@@ -2147,12 +2162,7 @@ export function createBlankEditorProject(
   }
 ): EditorThemeProject {
   const isPortrait = device.orientation === 'portrait';
-  const primarySize: [number, number] = isPortrait
-    ? [device.nativeHeight, device.nativeWidth]
-    : [device.nativeWidth, device.nativeHeight];
-  const secondarySize: [number, number] = isPortrait
-    ? [device.nativeWidth, device.nativeHeight]
-    : [device.nativeHeight, device.nativeWidth];
+  const primarySize = editorSizeForDevice(device);
 
   const tpl = options?.template;
   const master = tpl
@@ -2173,12 +2183,11 @@ export function createBlankEditorProject(
 
   const layouts: EditorLayout[] = [
     { size: primarySize, label: specLabelFromSize(primarySize), follow: false },
-    { size: secondarySize, label: specLabelFromSize(secondarySize), follow: true },
   ];
 
   return {
     template_id: `custom-${Date.now().toString(36)}`,
-    name: options?.name || tpl?.name || 'D92_新建创意主题',
+    name: options?.name || tpl?.name || `${specLabelFromSize(primarySize)}_新建创意主题`,
     description: tpl?.description || '由 D92 Studio 主题编辑器 V2.0 创作',
     category: options?.category || tpl?.category || '主题',
     category_id: tpl?.subCategory || '自定义',
@@ -2190,7 +2199,7 @@ export function createBlankEditorProject(
     author: '我的创作',
     entitlement: 'free',
     supported_devices: ['D92', 'D69'],
-    supported_resolutions: [`${primarySize[0]}x${primarySize[1]}`, `${secondarySize[0]}x${secondarySize[1]}`],
+    supported_resolutions: [`${primarySize[0]}x${primarySize[1]}`],
     thumbnail_variants: {},
     bg,
     master,
@@ -2203,12 +2212,30 @@ export function createBlankEditorProject(
   };
 }
 
+export function addIndependentEditorLayout(project: EditorThemeProject, size: [number, number], sourceIndex: number) {
+  const template = project.layouts[sourceIndex];
+  const followsMaster = sourceIndex > 0 && template?.follow;
+  const source = sourceIndex > 0 && !followsMaster ? template?.elements ?? project.master : project.master;
+  const elements = source.map(element => {
+    const hidden = followsMaster ? template?.vis?.[element.id] : undefined;
+    return { ...structuredClone(element), hide: hidden ?? element.hide };
+  });
+  project.layouts.push({ size, label: specLabelFromSize(size), follow: false, elements });
+}
+
 export function ensureEditorProjectFromTheme(
   theme: ThemeItem,
   device: DeviceInfo
 ): EditorThemeProject {
   if (theme.editorProject) {
-    return { ...structuredClone(theme.editorProject), name: theme.displayName };
+    const project = { ...structuredClone(theme.editorProject), name: theme.displayName };
+    const size = editorSizeForDevice(device);
+    const index = findEditorLayout(project.layouts, size);
+    const sourceLayout = project.layouts[index];
+    if (!sourceLayout || (sourceLayout.size[0] === size[0] && sourceLayout.size[1] === size[1])) return project;
+
+    addIndependentEditorLayout(project, size, index);
+    return project;
   }
   const base = createBlankEditorProject(device, {
     name: theme.displayName,

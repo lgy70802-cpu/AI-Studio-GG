@@ -6,7 +6,8 @@ namespace MiraBox.App;
 
 internal sealed record D92VideoPerformance(DateTimeOffset At, string Serial, string? Content, int RequestedFps,
     int EffectiveFps, double ActualFps, int Samples, double DecodeMs, double CompositionMs, double RotationMs,
-    double JpegMs, double UsbWriteMs, double PacingMs, double AverageJpegBytes);
+    double JpegMs, double UsbWriteMs, double PacingMs, double AverageJpegBytes,
+    double MaxFrameIntervalMs, double? MediaPositionSeconds);
 
 internal sealed record D92Diagnostic(DateTimeOffset At, Guid SessionId, Guid? SubmissionId,
     string Event, string Serial, int Rotation, string? Content, string? Mode, int? Width, int? Height,

@@ -41,6 +41,8 @@ import { CreatorStudioHub } from './editor/CreatorStudioHub';
 import { ThemeEditorV2 } from './editor/ThemeEditorV2';
 import type { SidebarMode } from './Sidebar';
 import { EditorThemeProject } from '../types/editor';
+import { createBlankEditorProject, makeElement } from '../data/editorCatalog';
+import { pluginCapability } from '../data/pluginCatalog';
 
 interface SecondaryViewsProps {
   onFlushLibrary: () => Promise<void>;
@@ -473,6 +475,30 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
     return (
       <PluginCenterView
         plugins={plugins}
+        devices={devices}
+        onApplyBuiltin={async (plugin, config) => {
+          const capability = pluginCapability(plugin);
+          if (!capability) throw new Error('此插件尚未接入设备输出。');
+          const project = createBlankEditorProject(activeDevice, { name: plugin.name });
+          project.template_id = `plugin-scene-${plugin.id}-${activeDevice.id}-${activeDevice.orientation}`;
+          project.master = [makeElement('plugin', {
+            pluginId: capability.id, pluginName: plugin.name, pluginVersion: capability.version,
+            capabilityKey: capability.key, a: 'mc', x: 0, y: 0, w: 100, h: 100,
+            accentColor: config.accentColor,
+            config: { ...capability.defaultConfig, ...config, showClock: config.showAquariumClock ?? true },
+          })];
+          const now = Date.now();
+          const item: ThemeItem = {
+            id: project.template_id, name: project.name, displayName: project.name,
+            category: '主题', resolution: project.layouts[0].size.join('×'), orientation: activeDevice.orientation,
+            clockStyle: 'none', author: plugin.author, source: 'custom', inLibrary: true,
+            downloads: '本地插件', downloadCount: 0, publishedAt: now, releasedLabel: '刚刚创建',
+            addedAt: now, addedLabel: '刚刚创建', lastUsedAt: now, useCount: 0,
+            durationMinutes: 15, inPlaylist: false, isFavorite: false, accentHex: config.accentColor,
+            editorProject: project,
+          };
+          return (await onSaveEditorTheme(item, true)) !== false;
+        }}
         pureMode={pureMode}
         activeTheme={activeTheme}
         activeDevice={activeDevice}
@@ -495,6 +521,9 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {devices.map((dev) => {
             const isActive = dev.id === activeDevice.id;
+            const deviceScreenRatio = dev.orientation === 'portrait'
+              ? dev.nativeHeight / dev.nativeWidth
+              : dev.nativeWidth / dev.nativeHeight;
             return (
               <div
                 key={dev.id}
@@ -539,14 +568,10 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
                 <div className="mt-4 flex items-center justify-center rounded-2xl bg-[#F7F6FC] p-4">
                   <div
                     style={{
-                      aspectRatio:
-                        dev.orientation === 'landscape'
-                          ? `${dev.nativeWidth} / ${dev.nativeHeight}`
-                          : `${dev.nativeHeight} / ${dev.nativeWidth}`,
+                      aspectRatio: deviceScreenRatio,
+                      width: deviceScreenRatio * (dev.orientation === 'portrait' ? 260 : 110),
                     }}
-                    className={`overflow-hidden rounded-2xl border border-[#DDD8F5] shadow-md transition-all duration-200 ${
-                      dev.orientation === 'landscape' ? 'h-[110px] max-w-full' : 'h-[260px] max-w-full'
-                    }`}
+                    className="max-w-full overflow-hidden rounded-2xl shadow-md ring-1 ring-[#DDD8F5] transition-all duration-200"
                   >
                     <ThemeArtwork
                       theme={desktopMode ? { ...activeTheme, id: dev.themeId ?? '', displayName: dev.themeName ?? '', imageUrl: dev.preview,
@@ -554,6 +579,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
                       className="h-full w-full"
                       showClock={true}
                       compact={true}
+                      fillDesktopFrame
                       portrait={dev.orientation === 'portrait'}
                     />
                   </div>

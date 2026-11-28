@@ -58,7 +58,7 @@ public sealed partial class StudioWindow
         var theme = FindTheme(themeId);
         if (theme is null || theme["deletedAt"] is not null || (!allowOutsideLibrary && theme["inLibrary"]?.GetValue<bool>() == false)) return null;
         var kind = theme["category"]?.GetValue<string>();
-        if (IsRenderedTheme(theme)) return ThemeIssue(theme) == null ? Path.Combine(dataRoot, "library-workspace.json") : null;
+        if (IsRenderedTheme(theme)) return ThemeIssue(theme, null) == null ? Path.Combine(dataRoot, "library-workspace.json") : null;
         if (kind == "视频" && ResolveMediaUrl(theme["thumbnailUrl"]?.GetValue<string>()) == null) return null;
         return kind is "壁纸" or "视频" ? ResolveMediaUrl(theme[kind == "视频" ? "videoUrl" : "imageUrl"]?.GetValue<string>()) : null;
     }

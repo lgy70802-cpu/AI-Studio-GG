@@ -89,7 +89,7 @@ public sealed partial class StudioWindow : Window
                 playlistTimer.Start();
                 scheduleTimer.Tick += async (_, _) => await TickSchedules();
                 scheduleTimer.Start();
-                themeTimer.Tick += async (_, _) => await TickThemes();
+                themeTimer.Tick += (_, _) => TickThemes();
                 themeTimer.Start();
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "启动失败"); }
@@ -237,8 +237,8 @@ public sealed partial class StudioWindow : Window
         {
             var rendered = await OpenTheme(device);
             themeRenderer = rendered.Renderer;
-            jpeg = D92StaticImage.Encode(rotation, rendered.Frame, device.Model);
-            themePreview = EncodePreview(rendered.Frame);
+            jpeg = rendered.Jpeg;
+            themePreview = EncodePreview(rendered.Renderer.DecodePreview(jpeg));
         }
         else
         {
@@ -259,7 +259,7 @@ public sealed partial class StudioWindow : Window
         if (themeRenderer != null)
         {
             var scene = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(dataRoot, device.ThemeFile!)))!;
-            var fps = ThemeHasMotion(scene["editorProject"]) ? (device.Model == "D69" ? 8 : 10) : 1;
+            var fps = ThemeHasMotion(scene["editorProject"]) ? (device.Model == "D69" ? 8 : D92StaticOutput.MaxLiveFps) : 1;
             output.LiveFramesPerSecond = fps;
             output.SubmitStill(jpeg, device.ThemeName, "clock");
             themeSessions[device.Serial] = new(themeRenderer, output, device, fps);
@@ -294,8 +294,13 @@ public sealed partial class StudioWindow : Window
             }
         };
         if (device.VideoFile != null)
-            output.SubmitVideo(ManagedVideoPath(device), device.ThemeName, profile: new DeskDisplay.Core.Models.UsbVideoPreferences(
-                device.Model == "D69" ? 20 : 24, true, device.Model == "D69" ? 80 : 90));
+        {
+            output.VideoPerformance += new D92Diagnostics(dataRoot).RecordVideoPerformance;
+            var profile = device.Model == "D69"
+                ? new DeskDisplay.Core.Models.UsbVideoPreferences(20, true, 80)
+                : D92StaticOutput.SmoothVideoProfile;
+            output.SubmitVideo(ManagedVideoPath(device), device.ThemeName, profile: profile);
+        }
         outputs[device.Serial] = output;
         runners[device.Serial] = output.RunAsync(state =>
         {
@@ -367,6 +372,14 @@ public sealed partial class StudioWindow : Window
                 catch (Exception ex) { Reply(new { id = updateId, error = ex is OperationCanceledException ? "更新操作已取消或超时，请重试。" : ex.Message }); }
                 return;
             }
+            if (control.RootElement.TryGetProperty("command", out var video) &&
+                video.GetString() is "video-begin" or "video-chunk" or "video-finish" or "video-cancel")
+            {
+                var videoId = control.RootElement.GetProperty("id").GetString();
+                try { Reply(new { id = videoId, result = await ImportVideo(video.GetString()!, control.RootElement) }); }
+                catch (Exception ex) { Reply(new { id = videoId, error = ex.Message }); }
+                return;
+            }
             if (control.RootElement.TryGetProperty("command", out var diagnostic) && diagnostic.GetString() == "debug-window-state" &&
                 Environment.GetEnvironmentVariable("MIRABOX_DEVTOOLS_PORT") != null)
             {
@@ -433,6 +446,7 @@ public sealed partial class StudioWindow : Window
                 foreach (var file in Directory.GetFiles(library.MediaRoot, "*.upload*"))
                 {
                     if (videoUploads.Values.Any(v => v.Path == file || file.StartsWith(v.Path + ".", StringComparison.OrdinalIgnoreCase))) continue;
+                    if (processingVideos.Any(path => file.StartsWith(path + ".", StringComparison.OrdinalIgnoreCase))) continue;
                     bytes += new FileInfo(file).Length; File.Delete(file);
                 }
                 result = new { bytes };
@@ -440,10 +454,6 @@ public sealed partial class StudioWindow : Window
             else if (command?.StartsWith("package-", StringComparison.Ordinal) == true)
             {
                 result = await PackageCommand(command, message);
-            }
-            else if (command?.StartsWith("video-", StringComparison.Ordinal) == true)
-            {
-                result = await ImportVideo(command, message);
             }
             else if (command == "theme-preview-end")
             {
@@ -500,7 +510,7 @@ public sealed partial class StudioWindow : Window
                     result = true;
                 }
             }
-            else if (command is "craft-preview" or "craft-settings" or "craft-configure" or "craft-apply")
+            else if (command is "craft-preview" or "craft-settings" or "craft-configure" or "craft-apply" or "craft-cover" or "craft-remove")
                 result = await CraftCommand(command, message, message.TryGetProperty("serial", out var craftSerial) &&
                     detected.Any(d => d.SerialNumber == craftSerial.GetString()));
             else if (command == "craft-list") result = new CraftPluginStore(Path.Combine(dataRoot, "Plugins")).Entries;
@@ -557,6 +567,7 @@ public sealed partial class StudioWindow : Window
                         videoDuration = outputs.GetValueOrDefault(d.Serial)?.VideoProgress?.Duration?.TotalSeconds,
                         videoFps = outputs.GetValueOrDefault(d.Serial)?.VideoRate?.ActualFps,
                         renderFps = themeSessions.GetValueOrDefault(d.Serial)?.ActualFps,
+                        usbFps = themeSessions.GetValueOrDefault(d.Serial)?.UsbFps,
                         outputStatus = !online ? "设备离线" : standbySerials.Contains(d.Serial) ? "黑屏待机（背光保持）" : themeErrors.GetValueOrDefault(d.Serial) ?? errors.GetValueOrDefault(d.Serial) ?? progress?.Message ?? (written.Contains(d.Serial) ? "正在输出" : d.Playing ? "等待恢复输出" : "已暂停输出") };
                 }).ToArray() };
             }

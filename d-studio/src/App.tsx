@@ -39,6 +39,7 @@ import { PortraitPosterCard } from './components/PortraitPosterCard';
 import { LandscapePosterCard } from './components/LandscapePosterCard';
 import { EditorThemeProject } from './types/editor';
 import { ensureEditorProjectFromTheme, genEditorId } from './data/editorCatalog';
+import { COMPONENT_PLUGIN_IDS } from './data/pluginCatalog';
 
 export default function App() {
   const [activeNav, setActiveNav] = useState<NavSection>('home');
@@ -65,7 +66,20 @@ export default function App() {
     localStorage.setItem('studio-library-query', searchQuery);
     localStorage.setItem('studio-library-category', categoryFilter);
   }, [searchQuery, categoryFilter]);  const triggeredScheduleRef = useRef<Record<string, string>>({});
-  const [plugins, setPlugins] = useState<PluginItem[]>(INITIAL_PLUGINS);
+  const [plugins, setPlugins] = useState<PluginItem[]>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('pixbuddy-plugin-configs') ?? '{}');
+      const installed = JSON.parse(localStorage.getItem('pixbuddy-plugin-installations') ?? '{}');
+      return INITIAL_PLUGINS.map(plugin => ({
+        ...plugin, installed: installed[plugin.id] ?? plugin.installed,
+        config: { ...plugin.config, ...stored[plugin.id] },
+      }));
+    } catch { return INITIAL_PLUGINS; }
+  });
+  useEffect(() => {
+    localStorage.setItem('pixbuddy-plugin-configs', JSON.stringify(Object.fromEntries(plugins.map(plugin => [plugin.id, plugin.config]))));
+    localStorage.setItem('pixbuddy-plugin-installations', JSON.stringify(Object.fromEntries(plugins.map(plugin => [plugin.id, plugin.installed]))));
+  }, [plugins]);
   const [pureMode, setPureMode] = useState<boolean>(false);
   const [pomodoroState, setPomodoroState] = useState<PomodoroRuntimeState>({
     running: false,
@@ -1451,7 +1465,7 @@ export default function App() {
   }, [schedules, schedulesEnabled]);
 
   const enabledPlugins = useMemo(
-    () => (desktopMode || pureMode ? [] : plugins.filter((p) => p.installed && p.enabled)),
+    () => (desktopMode || pureMode ? [] : plugins.filter((p) => !COMPONENT_PLUGIN_IDS.has(p.id) && p.installed && p.enabled)),
     [plugins, pureMode]
   );
 
@@ -1950,12 +1964,13 @@ export default function App() {
                       ? `${activeDevice.nativeWidth} / ${activeDevice.nativeHeight}`
                       : `${activeDevice.nativeHeight} / ${activeDevice.nativeWidth}`,
                 }}
-                className="h-10 shrink-0 overflow-hidden rounded-lg border border-[#E5E2F4] bg-[#160F30] shadow-xs transition-all duration-200"
+                className="h-10 shrink-0 overflow-hidden rounded-lg bg-[#160F30] shadow-xs ring-1 ring-[#E5E2F4] transition-all duration-200"
               >
                 <ThemeArtwork
                   theme={effectiveActiveTheme}
                   className="h-full w-full"
                   showClock={false}
+                  fillDesktopFrame
                   portrait={activeDevice.orientation === 'portrait'}
                 />
               </div>

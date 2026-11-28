@@ -60,6 +60,7 @@ export interface ThemeItem {
 export interface DeviceInfo {
   standby?: boolean;
   renderFps?: number;
+  usbFps?: number;
   hardwareBrightness?: boolean;
   hardwarePower?: boolean;
   id: string;

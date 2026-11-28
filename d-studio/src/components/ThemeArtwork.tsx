@@ -11,6 +11,7 @@ interface ThemeArtworkProps {
   className?: string;
   showClock?: boolean;
   compact?: boolean;
+  fillDesktopFrame?: boolean;
   portrait?: boolean;
   liveTick?: boolean;
   overlayPlugins?: PluginItem[];
@@ -22,6 +23,7 @@ export const ThemeArtwork: React.FC<ThemeArtworkProps> = ({
   className = '',
   showClock = true,
   compact = false,
+  fillDesktopFrame = false,
   portrait = false,
   liveTick = false,
   overlayPlugins,
@@ -44,8 +46,8 @@ export const ThemeArtwork: React.FC<ThemeArtworkProps> = ({
 
   if (theme.desktopStatic && !theme.editorProject) return (
     <div className={`relative overflow-hidden bg-black ${className}`}>
-      {theme.imageUrl && <img src={compact ? theme.thumbnailUrl ?? theme.imageUrl : theme.imageUrl} alt={theme.displayName}
-        className="h-full w-full object-contain"
+      {theme.imageUrl && <img src={compact && !fillDesktopFrame ? theme.thumbnailUrl ?? theme.imageUrl : theme.imageUrl} alt={theme.displayName}
+        className={`block h-full w-full ${fillDesktopFrame ? "object-cover" : "object-contain"}`}
         style={{ filter: theme.desktopBrightness == null ? undefined : `brightness(${theme.desktopBrightness}%)` }} />}
     </div>
   );

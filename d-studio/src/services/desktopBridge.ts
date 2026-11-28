@@ -25,8 +25,8 @@ function request<T>(command: string, payload: object = {}): Promise<T> {
     pending.set(id, { resolve: value => resolve(value as T), reject });
     bridge!.postMessage({ id, command, ...payload });
     if (!command.startsWith('capture-') && !command.startsWith('package-') && !command.startsWith('updates-')) window.setTimeout(() => {
-      if (pending.delete(id)) reject(new Error('设备操作超时，请检查连接后重试。'));
-    }, 60000);
+      if (pending.delete(id)) reject(new Error(command === 'video-finish' ? '处理视频超时，请重试。' : '设备操作超时，请检查连接后重试。'));
+    }, command === 'video-finish' ? 360000 : 60000);
   });
 }
 export interface OrientationUse { Serial: string; Portrait: boolean; ThemeId: string; UsedAt: number }
@@ -95,6 +95,7 @@ export const resetSchedule = (ruleId: string) => request<ScheduleRuntime>('sched
 export const applyMedia = (serial: string, themeId: string) => request('apply-media', { serial, themeId });
 export const previewTheme = (serial: string, theme: import('../data/themes').ThemeItem) => request('theme-preview', { serial, theme });
 export const endThemePreview = (serial: string) => request('theme-preview-end', { serial });
+export const isLocalVideo = (file: File) => file.type.startsWith('video/') || /\.(mp4|m4v|mov|webm)$/i.test(file.name);
 export async function importVideo(file: File, progress: (percent: number) => void) {
   if (file.size > 500 * 1024 * 1024) throw new Error('视频超过 500 MiB');
   const uploadId = await request<string>('video-begin', { name: file.name, size: file.size });
@@ -136,10 +137,12 @@ export const refreshCurrentMedia = (serial: string, themeId: string, portrait: b
 
 export const setCloseToTray = (enabled: boolean) => request<{ closeToTray: boolean }>("window-preferences", { enabled });
 export const renameDevice = (serial: string, name: string) => request<boolean>("device-rename", { serial, name });
-export interface CraftPluginEntry { Id: string; Name: string; Version: string; Author: string; Format?: string }
+export interface CraftPluginEntry { Id: string; Name: string; Version: string; Author: string; Description?: string; Format?: string }
+export const craftCover = (pluginId: string, serial: string) => request<string>('craft-cover', { pluginId, serial });
+export const removeCraft = (pluginId: string) => request<boolean>('craft-remove', { pluginId });
 export const listCraftPlugins = () => request<CraftPluginEntry[]>('craft-list');
 export const importCraftPlugin = () => request<{ Entry: CraftPluginEntry; AlreadyImported: boolean } | null>('craft-import');
-export const previewCraftPlugin = (pluginId: string, serial: string) => request<boolean>('craft-preview', { pluginId, serial });
+export const previewCraftPlugin = (pluginId: string, serial: string, settings?: CraftSettings) => request<boolean>('craft-preview', { pluginId, serial, settings });
 export type CraftSettings = Record<string, boolean | string | number>;
 export const craftSettings = (pluginId: string) => request<CraftSettings>('craft-settings', { pluginId });
 export const configureCraft = (pluginId: string, settings: CraftSettings) => request<boolean>('craft-configure', { pluginId, settings });

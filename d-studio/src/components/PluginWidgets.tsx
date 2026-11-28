@@ -11,6 +11,7 @@ import {
   CraftAquariumWidget,
   CraftLyricsWidget,
   CraftNixieClockWidget,
+  FittedNixieClockWidget,
   CraftStocksWidget,
 } from './crafts/CraftWidgets';
 import {
@@ -433,14 +434,14 @@ export const PluginWidgetCard: React.FC<PluginWidgetCardProps> = ({
         style={{ ...surfaceStyle, opacity: Math.max(0.55, (config.opacity ?? 92) / 100) }}
         className={`overflow-hidden ${isFull ? 'border-0 rounded-none' : 'border'} shadow-[0_10px_28px_rgba(12,8,4,0.62)] ${scaleTransform} ${sizeCls}`}
       >
-        <CraftNixieClockWidget
-          showSeconds={config.showSeconds !== false}
-          showDate={config.showDate !== false}
-          use24Hour={config.use24Hour !== false}
-          colorHue={config.nixieHue ?? 'amber'}
-          compact={compact}
-          now={now}
-        />
+        {React.createElement(isFull ? FittedNixieClockWidget : CraftNixieClockWidget, {
+          showSeconds: config.showSeconds !== false,
+          showDate: config.showDate !== false,
+          use24Hour: config.use24Hour !== false,
+          colorHue: config.nixieHue ?? 'amber',
+          compact,
+          now,
+        })}
       </div>
     );
   }

@@ -10,6 +10,8 @@ public sealed partial class StudioWindow
 {
     sealed record VideoUpload(string Path, string Name, string Extension, long Expected, FileStream Stream);
     readonly Dictionary<string, VideoUpload> videoUploads = new();
+    readonly HashSet<string> processingVideos = new();
+    readonly SemaphoreSlim videoProcessing = new(1);
     async Task<object> ImportVideo(string command, JsonElement message)
     {
         if (command == "video-begin")
@@ -43,17 +45,45 @@ public sealed partial class StudioWindow
             if (command != "video-finish" || new FileInfo(upload.Path).Length != upload.Expected)
                 throw new InvalidDataException("视频数据不完整，请重新导入。");
             var temporary = upload.Path + upload.Extension;
+            var converted = upload.Path + ".converted.mp4";
+            var sourcePath = temporary;
+            var outputExtension = upload.Extension;
             File.Move(upload.Path, temporary);
+            processingVideos.Add(upload.Path);
             try
             {
-                var metadata = await new WindowsVideoProbe().ProbeAsync(temporary);
+                await videoProcessing.WaitAsync(shutdown.Token);
+                VideoMetadata metadata;
+                try
+                {
+                    var probe = new WindowsVideoProbe();
+                    var needsConversion = await VideoCompatibilityConverter.IsHevcAsync(temporary, shutdown.Token);
+                    VideoMetadata? nativeMetadata = null;
+                    if (!needsConversion)
+                    {
+                        try { nativeMetadata = await probe.ProbeAsync(temporary); }
+                        catch (Exception error) when (error.HResult == unchecked((int)0xC00D109B) ||
+                            error is System.Runtime.InteropServices.COMException or InvalidDataException or TimeoutException or NotSupportedException)
+                        {
+                            Log(new { at = DateTimeOffset.Now, eventType = "video-import-compatibility", code = error.HResult.ToString("X8") });
+                        }
+                    }
+                    if (nativeMetadata == null)
+                    {
+                        await VideoCompatibilityConverter.ConvertAsync(sourcePath, converted, shutdown.Token);
+                        sourcePath = converted;
+                        outputExtension = ".mp4";
+                    }
+                    metadata = nativeMetadata ?? await probe.ProbeAsync(sourcePath);
+                }
+                finally { videoProcessing.Release(); }
                 if (metadata.Duration <= TimeSpan.Zero) throw new InvalidDataException("视频时长无效。");
                 string hash;
                 using (var source = File.OpenRead(temporary))
                     hash = Convert.ToHexString(await SHA256.HashDataAsync(source)).ToLowerInvariant();
-                var media = hash + upload.Extension;
+                var media = hash + (sourcePath == converted ? ".compatible" : "") + outputExtension;
                 var thumbnail = hash + ".video.jpg";
-                if (!File.Exists(Path.Combine(library.MediaRoot, media))) File.Move(temporary, Path.Combine(library.MediaRoot, media));
+                if (!File.Exists(Path.Combine(library.MediaRoot, media))) File.Move(sourcePath, Path.Combine(library.MediaRoot, media));
                 File.WriteAllBytes(Path.Combine(library.MediaRoot, thumbnail), metadata.Thumbnail);
                 var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
                 return new {
@@ -70,7 +100,12 @@ public sealed partial class StudioWindow
                     inPlaylist = false, isFavorite = false, isRecent = true, accentHex = "#5E45F8"
                 };
             }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            finally
+            {
+                processingVideos.Remove(upload.Path);
+                File.Delete(temporary);
+                File.Delete(converted);
+            }
         }
         finally { if (File.Exists(upload.Path)) File.Delete(upload.Path); }
     }

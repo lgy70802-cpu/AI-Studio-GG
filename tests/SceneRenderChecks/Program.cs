@@ -36,7 +36,7 @@ internal static class Program
                 foreach (var model in new[] { "D69", "D92" })
                 {
                     var geometry = D92StaticImage.Geometry(90, model);
-                    using var renderer = new StudioThemeRenderer(geometry.Width, geometry.Height);
+                    using var renderer = new StudioThemeRenderer(geometry.Width, geometry.Height, geometry.Rotation);
                     int? layoutIndex = null;
                     if (theme["editorProject"]?["layouts"] is JsonArray layouts)
                         for (var i = 0; i < layouts.Count; i++)
@@ -45,8 +45,7 @@ internal static class Program
                     var timer = Stopwatch.StartNew(); var frames = 0; var changes = 0; string? prior = null;
                     while (timer.Elapsed.TotalSeconds < 8)
                     {
-                        var bitmap = await renderer.Capture();
-                        var jpeg = await renderer.Encode(bitmap, 90, model);
+                        var jpeg = await renderer.CaptureJpeg(model);
                         D92StaticImage.RequireTransportRaster(jpeg, model);
                         var hash = Convert.ToHexString(SHA256.HashData(jpeg));
                         if (hash != prior) changes++;

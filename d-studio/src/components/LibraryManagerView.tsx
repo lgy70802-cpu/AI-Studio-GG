@@ -1,5 +1,5 @@
 import { matchesDeviceSize } from '../utils/deviceContent';
-import { importVideo } from '../services/desktopBridge';
+import { importVideo, isLocalVideo } from '../services/desktopBridge';
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   CalendarPlus,
@@ -202,8 +202,8 @@ export const LibraryManagerView: React.FC<LibraryManagerViewProps> = ({
       const created: ThemeItem[] = [];
       for (let i = 0; i < mediaFiles.length; i += 1) {
         const file = mediaFiles[i];
-        if (file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(file.name)) {
-          try { created.push(await importVideo(file, percent => setImportProgress(file.name + ' · ' + percent + '%'))); }
+        if (isLocalVideo(file)) {
+          try { created.push(await importVideo(file, percent => setImportProgress(file.name + (percent === 100 ? ' · 正在处理视频' : ' · ' + percent + '%')))); }
           catch (error) { failed.push(file.name + '（' + (error as Error).message + '）'); }
           continue;
         }

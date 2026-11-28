@@ -1,4 +1,4 @@
-import { desktopMode, importVideo } from '../../services/desktopBridge';
+import { desktopMode, importVideo, isLocalVideo } from '../../services/desktopBridge';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -62,7 +62,9 @@ import {
   readVideoDimensions,
   reflowElementsForSize,
   specLabelFromSize,
-  specMatchesDeviceModel,
+  addIndependentEditorLayout,
+  editorSizeForDevice,
+  findEditorLayout,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
 import {
@@ -336,14 +338,9 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   const latestProject = useRef(project);
   latestProject.current = project;
   const saving = useRef(false);
-  const [layoutIndex, setLayoutIndex] = useState(() => {
-    const portrait = activeDevice.orientation === 'portrait';
-    const width = portrait ? (activeDevice.model === 'D69' ? 480 : 462) : (activeDevice.model === 'D69' ? 1280 : 1920);
-    const height = portrait ? (activeDevice.model === 'D69' ? 1280 : 1920) : (activeDevice.model === 'D69' ? 480 : 462);
-    const exact = initialProject.layouts.findIndex(layout => layout.size[0] === width && layout.size[1] === height);
-    if (exact >= 0) return exact;
-    return Math.max(0, initialProject.layouts.findIndex(layout => (layout.size[0] < layout.size[1]) === portrait));
-  });
+  const [layoutIndex, setLayoutIndex] = useState(() =>
+    findEditorLayout(initialProject.layouts, editorSizeForDevice(activeDevice))
+  );
   const [activeRailTab, setActiveRailTab] = useState<EditorRailTab>('add');
   const [leftCollapsed, setLeftCollapsed] = useState<boolean>(false);
   const [rightCollapsed, setRightCollapsed] = useState<boolean>(false);
@@ -799,10 +796,10 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
   // Import local image/video file into canvas, bg, or replace selected media layer
   const importMediaFile = useCallback(
     async (file: File, mode: 'el' | 'bg' | 'replace-el') => {
-      const isVideo = file.type.startsWith('video/');
+      const isVideo = isLocalVideo(file);
       const isImage = file.type.startsWith('image/');
       if (!isVideo && !isImage) {
-        onNotify('暂不支持该文件格式，请上传 PNG / JPG / GIF / WebP / MP4 / WebM');
+        onNotify('请选择图片或 MP4 / MOV / M4V / WebM 视频。');
         return;
       }
 
@@ -810,8 +807,15 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
         mode === 'replace-el' && selectedElements.length === 1 ? selectedElements[0] : null;
 
       if (isVideo) {
-        const url = desktopMode ? (await importVideo(file, () => {})).videoUrl! : URL.createObjectURL(file);
-        const dims = await readVideoDimensions(url);
+        let url: string;
+        let dims: Awaited<ReturnType<typeof readVideoDimensions>>;
+        try {
+          url = desktopMode ? (await importVideo(file, () => {})).videoUrl! : URL.createObjectURL(file);
+          dims = await readVideoDimensions(url);
+        } catch (error) {
+          onNotify(error instanceof Error ? error.message : '视频导入失败');
+          return;
+        }
         setRecentImports((prev) => [
           { id: genEditorId('imp'), name: file.name, kind: 'video', src: url, w: dims.w, h: dims.h },
           ...prev.slice(0, 11),
@@ -2675,9 +2679,8 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
     } finally { saving.current = false; }
   };
 
-  const availableSpecs = availableEditorSpecs(devices);
-  const specKey = availableSpecs.map(spec => spec.id).join();
-  const handleSwitchDeviceSpec = (specSize: [number, number]) => {
+  const availableSpecs = availableEditorSpecs(devices, activeDevice);
+  const handleSwitchDeviceSpec = (specSize: [number, number], addLayout = false) => {
     const foundIdx = project.layouts.findIndex(
       (l) => l.size[0] === specSize[0] && l.size[1] === specSize[1]
     );
@@ -2687,32 +2690,30 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       onNotify(`已切换编辑画布至 ${specLabelFromSize(specSize)} (${specSize[0]}×${specSize[1]})`);
       return;
     }
+    const resize = !addLayout && !sourceThemeId && project.layouts.length === 1;
     commitProject((draft) => {
-      draft.layouts.push({
-        size: specSize,
-        label: specLabelFromSize(specSize),
-        follow: true,
-      });
+      if (resize) {
+        draft.layouts[0] = { ...draft.layouts[0], size: specSize, label: specLabelFromSize(specSize) };
+      } else {
+        addIndependentEditorLayout(draft, specSize, layoutIndex);
+      }
       return draft;
     });
-    setLayoutIndex(project.layouts.length);
+    setLayoutIndex(resize ? 0 : project.layouts.length);
     setSelectedIds([]);
-    onNotify(`已自动新增 ${specLabelFromSize(specSize)} 跟随画布`);
+    onNotify(resize
+      ? `已调整画布为 ${specLabelFromSize(specSize)}`
+      : `已添加 ${specLabelFromSize(specSize)} 独立布局`);
   };
 
+  const [deviceWidth, deviceHeight] = editorSizeForDevice(activeDevice);
+  const deviceScope = `${activeDevice.id}:${deviceWidth}x${deviceHeight}`;
+  const lastDeviceScope = useRef(deviceScope);
   useEffect(() => {
-    const knownSpec = EDITOR_DEVICE_SPECS.find(spec => spec.size[0] === canvasPxW && spec.size[1] === canvasPxH);
-    if (!knownSpec || availableSpecs.some(spec => spec.id === knownSpec.id)) return;
-    const preferred =
-      availableSpecs.find(
-        (spec) =>
-          specMatchesDeviceModel(spec, activeDevice.model) &&
-          (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')
-      ) ?? availableSpecs[0];
-    if (preferred) {
-      handleSwitchDeviceSpec(preferred.size);
-    }
-  }, [specKey, canvasPxW, canvasPxH]);
+    if (lastDeviceScope.current === deviceScope) return;
+    lastDeviceScope.current = deviceScope;
+    handleSwitchDeviceSpec([deviceWidth, deviceHeight]);
+  }, [deviceScope, deviceWidth, deviceHeight, handleSwitchDeviceSpec]);
 
   const singleSelected = selectedElements.length === 1 ? selectedElements[0] : null;
   const singleSelectedLocked = singleSelected ? Boolean(project.locks[singleSelected.id]) : false;
@@ -2730,7 +2731,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
       <input
         ref={fileUploadRef}
         type="file"
-        accept="image/*,video/mp4,video/webm"
+        accept="image/*,video/mp4,video/webm,.mov,.m4v"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -2908,11 +2909,11 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                 {s.label} · {s.size[0]}×{s.size[1]}
               </option>
             ))}
-            {!EDITOR_DEVICE_SPECS.some(
+            {!availableSpecs.some(
               (s) => s.size[0] === canvasPxW && s.size[1] === canvasPxH
             ) && (
               <option value={`${canvasPxW}x${canvasPxH}`}>
-                自定义 · {canvasPxW}×{canvasPxH}
+                {specLabelFromSize([canvasPxW, canvasPxH])} · {canvasPxW}×{canvasPxH}
               </option>
             )}
           </select>
@@ -3125,11 +3126,11 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                 {s.label} · {s.size[0]}×{s.size[1]}
               </option>
             ))}
-            {!EDITOR_DEVICE_SPECS.some(
+            {!availableSpecs.some(
               (s) => s.size[0] === canvasPxW && s.size[1] === canvasPxH
             ) && (
               <option value={`${canvasPxW}x${canvasPxH}`}>
-                自定义 · {canvasPxW}×{canvasPxH}
+                {specLabelFromSize([canvasPxW, canvasPxH])} · {canvasPxW}×{canvasPxH}
               </option>
             )}
           </select>
@@ -3701,7 +3702,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               {/* Selection Transform Overlay (Follows element rotation when single-selected) */}
               {selBox && !editingTextId && (
                 <div
-                  className="pointer-events-none absolute"
+                  className="pointer-events-none absolute z-20"
                   style={{
                     left: `${selBox.left}px`,
                     top: `${selBox.top}px`,
@@ -3915,8 +3916,6 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
             <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
               <span className="shrink-0 text-[11px] font-bold text-[#6B6880]">多规格布局:</span>
               {project.layouts.map((lay, idx) => {
-                const spec = EDITOR_DEVICE_SPECS.find(option => option.size[0] === lay.size[0] && option.size[1] === lay.size[1]);
-                if (spec && !availableSpecs.some(option => option.id === spec.id)) return null;
                 const active = idx === layoutIndex;
                 return (
                   <button
@@ -4544,7 +4543,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
               </button>
             </div>
 
-            <div className="grid flex-1 grid-cols-2 gap-3 overflow-y-auto p-5 sm:grid-cols-3 studio-scroll">
+            <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-2 content-start gap-3 overflow-y-auto p-5 sm:grid-cols-3 studio-scroll">
               {themes
                 .filter((t) => Boolean(t.imageUrl))
                 .map((t) => (
@@ -4659,7 +4658,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                   key={s.id}
                   type="button"
                   onClick={() => {
-                    handleSwitchDeviceSpec(s.size);
+                    handleSwitchDeviceSpec(s.size, true);
                     setAddLayoutOpen(false);
                   }}
                   className="rounded-xl border border-[#E6E4F2] bg-[#F8F7FC] p-2.5 text-left hover:border-[#5E45F8] hover:bg-[#EFEBFD]"
@@ -4698,7 +4697,7 @@ export const ThemeEditorV2: React.FC<ThemeEditorV2Props> = ({
                     handleSwitchDeviceSpec([
                       Math.max(200, Math.min(3840, customLayoutW)),
                       Math.max(200, Math.min(3840, customLayoutH)),
-                    ]);
+                    ], true);
                     setAddLayoutOpen(false);
                   }}
                   className="ml-auto rounded-xl bg-[#5E45F8] px-3 py-1.5 text-[12px] font-bold text-white hover:bg-[#4D34E6]"

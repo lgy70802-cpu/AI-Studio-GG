@@ -1,4 +1,4 @@
-import { desktopMode, importVideo } from '../../services/desktopBridge';
+import { desktopMode, importVideo, isLocalVideo } from '../../services/desktopBridge';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
@@ -26,13 +26,12 @@ import { DeviceInfo, ThemeItem } from '../../data/themes';
 import {
   BUILTIN_TEMPLATES,
   BuiltinTemplateSpec,
-  EDITOR_DEVICE_SPECS,
   availableEditorSpecs,
   createBlankEditorProject,
   ensureEditorProjectFromTheme,
   genEditorId,
   makeElement,
-  specMatchesDeviceModel,
+  editorSizeForDevice,
 } from '../../data/editorCatalog';
 import { cloudResourceAdapter } from '../../services/cloudResourceAdapter';
 import { EditorThemeProject, THEME_SCHEMA_VERSION } from '../../types/editor';
@@ -70,30 +69,10 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
   onDuplicateCustomTheme,
   onNotify,
 }) => {
-  const availableSpecs = availableEditorSpecs(devices);
-  const specKey = availableSpecs.map(spec => spec.id).join();
-  const [selectedSpecId, setSelectedSpecId] = useState<string>(
-    activeDevice.orientation === 'portrait'
-      ? activeDevice.nativeWidth === 1280
-        ? 'd69-port'
-        : 'd92-port'
-      : activeDevice.nativeWidth === 1280
-        ? 'd69-land'
-        : 'd92-land'
-  );
-  useEffect(() => {
-    const preferred =
-      availableSpecs.find(
-        (spec) =>
-          specMatchesDeviceModel(spec, activeDevice.model) &&
-          (spec.size[0] < spec.size[1]) === (activeDevice.orientation === 'portrait')
-      ) ??
-      availableSpecs[0] ??
-      EDITOR_DEVICE_SPECS[0];
-    if (preferred) {
-      setSelectedSpecId(preferred.id);
-    }
-  }, [activeDevice.id, activeDevice.model, activeDevice.orientation, specKey]);
+  const availableSpecs = availableEditorSpecs(devices, activeDevice);
+  const deviceSize = editorSizeForDevice(activeDevice);
+  const deviceScope = `${activeDevice.id}:${deviceSize.join('x')}`;
+  const [specOverride, setSpecOverride] = useState<{ scope: string; id: string } | null>(null);
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
   const [heroMenuOpen, setHeroMenuOpen] = useState(false);
   const [previewBuiltin, setPreviewBuiltin] = useState<BuiltinTemplateSpec | null>(null);
@@ -111,16 +90,19 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
   const [tplSearch, setTplSearch] = useState('');
   const [tplCat, setTplCat] = useState<'全部' | '动态时钟' | '主题'>('全部');
   const [workSearch, setWorkSearch] = useState('');
-  const [workOri, setWorkOri] = useState<'all' | 'landscape' | 'portrait'>('all');
+  const [workOrientation, setWorkOrientation] = useState<{ scope: string; value: 'all' | 'landscape' | 'portrait' } | null>(null);
+  const workOri = workOrientation?.scope === deviceScope ? workOrientation.value : activeDevice.orientation;
+  const setWorkOri = (value: 'all' | 'landscape' | 'portrait') => setWorkOrientation({ scope: deviceScope, value });
 
   const localImportRef = useRef<HTMLInputElement | null>(null);
   const jsonImportRef = useRef<HTMLInputElement | null>(null);
   const heroMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const selectedSpec =
-    availableSpecs.find((s) => s.id === selectedSpecId) ?? availableSpecs[0] ?? EDITOR_DEVICE_SPECS[0];
-  const previewWidth = selectedSpec.id.startsWith('d69') ? 1280 : 1920;
-  const previewHeight = selectedSpec.id.startsWith('d69') ? 480 : 462;
+  const selectedSpec = (specOverride?.scope === deviceScope
+    ? availableSpecs.find(spec => spec.id === specOverride.id)
+    : undefined) ?? availableSpecs.find(spec => spec.size[0] === deviceSize[0] && spec.size[1] === deviceSize[1]) ?? availableSpecs[0];
+  const previewWidth = Math.max(...selectedSpec.size);
+  const previewHeight = Math.min(...selectedSpec.size);
 
   const customThemes = useMemo(
     () => themes.filter((t) => t.source === 'custom' || Boolean(t.editorProject)),
@@ -143,7 +125,13 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
   const filteredCustomThemes = useMemo(() => {
     const q = workSearch.trim().toLowerCase();
     return customThemes.filter((item) => {
-      if (workOri !== 'all' && item.orientation !== workOri) return false;
+      if (workOri !== 'all') {
+        const layouts = item.editorProject?.layouts;
+        const matches = layouts?.length
+          ? layouts.some(layout => (layout.size[0] < layout.size[1]) === (workOri === 'portrait'))
+          : item.orientation === workOri;
+        if (!matches) return false;
+      }
       if (!q) return true;
       return (
         item.displayName.toLowerCase().includes(q) ||
@@ -217,8 +205,10 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
     const proj = createBlankEditorProject(makeDeviceWithSpec(), {
       name: f.name.replace(/\.[^.]+$/, ''),
     });
-    if (f.type.startsWith('video/')) {
-      const url = desktopMode ? (await importVideo(f, () => {})).videoUrl! : URL.createObjectURL(f);
+    if (isLocalVideo(f)) {
+      let url: string;
+      try { url = desktopMode ? (await importVideo(f, () => {})).videoUrl! : URL.createObjectURL(f); }
+      catch (error) { onNotify(error instanceof Error ? error.message : '视频导入失败'); return; }
       proj.bg = {
         kind: 'video',
         vurl: url,
@@ -298,7 +288,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
       <input
         ref={localImportRef}
         type="file"
-        accept="image/*,video/mp4,video/webm"
+        accept="image/*,video/mp4,video/webm,.mov,.m4v"
         className="hidden"
         onChange={(e) => void handleQuickImportLocal(e)}
       />
@@ -387,12 +377,13 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
             画布规格
           </span>
           {availableSpecs.map((spec) => {
-            const active = spec.id === selectedSpecId;
+            const active = spec.id === selectedSpec.id;
             return (
               <button
                 key={spec.id}
                 type="button"
-                onClick={() => setSelectedSpecId(spec.id)}
+                aria-pressed={active}
+                onClick={() => setSpecOverride({ scope: deviceScope, id: spec.id })}
                 className={`rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-all whitespace-nowrap ${
                   active
                     ? 'border-[#8B76FF] bg-[#5E45F8] text-white shadow-[0_6px_16px_rgba(94,69,248,0.45)]'
@@ -552,7 +543,8 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                   className="relative mx-auto w-full cursor-pointer overflow-hidden rounded-xl bg-[#120733]"
                   style={{
                     aspectRatio: `${selectedSpec.size[0]} / ${selectedSpec.size[1]}`,
-                    maxHeight: isPort ? '150px' : undefined,
+                    width: isPort ? `${150 * selectedSpec.size[0] / selectedSpec.size[1]}px` : undefined,
+                    maxWidth: '100%',
                   }}
                 >
                   <ThemeArtwork
@@ -635,6 +627,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                     <button
                       key={opt.id}
                       type="button"
+                      aria-pressed={workOri === opt.id}
                       onClick={() => setWorkOri(opt.id)}
                       className={`rounded-lg px-2.5 py-1 transition-colors whitespace-nowrap ${
                         workOri === opt.id
@@ -701,7 +694,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
               type="button"
               onClick={() => {
                 setWorkSearch('');
-                setWorkOri('all');
+                setWorkOri(activeDevice.orientation);
               }}
               className="mt-2 rounded-lg bg-[#EFEBFD] px-3 py-1 text-[11.5px] font-semibold text-[#5E45F8] hover:bg-[#E4DCFC]"
             >
@@ -712,13 +705,17 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredCustomThemes.map((item) => {
               const isCurrent = item.id === activeTheme.id;
-              const isPort = item.orientation === 'portrait';
+              const desiredPortrait = (workOri === 'all' ? item.orientation : workOri) === 'portrait';
               const declaredSize = item.resolution.match(/\d+/g)?.map(Number);
-              const previewLayout = item.editorProject?.layouts.find(layout =>
-                layout.size[0] === declaredSize?.[0] && layout.size[1] === declaredSize?.[1]
-              ) ?? item.editorProject?.layouts.find(layout => (layout.size[0] < layout.size[1]) === isPort)
-                ?? item.editorProject?.layouts[0];
-              const previewSize = previewLayout?.size ?? declaredSize ?? [activeDevice.nativeWidth, activeDevice.nativeHeight];
+              const matchingLayouts = item.editorProject?.layouts.filter(layout =>
+                (layout.size[0] < layout.size[1]) === desiredPortrait
+              );
+              const previewLayout = matchingLayouts?.find(layout =>
+                Math.max(...layout.size) === activeDevice.nativeWidth && Math.min(...layout.size) === activeDevice.nativeHeight
+              ) ?? matchingLayouts?.find(layout => layout.size[0] === declaredSize?.[0] && layout.size[1] === declaredSize?.[1])
+                ?? matchingLayouts?.[0] ?? item.editorProject?.layouts[0];
+              const previewSize = previewLayout?.size ?? (declaredSize?.length === 2 ? declaredSize : deviceSize);
+              const isPort = previewSize[0] < previewSize[1];
               const previewLayoutIndex = previewLayout ? item.editorProject!.layouts.indexOf(previewLayout) : undefined;
               const cloudUpd = item.editorProject?.cloudTemplateId
                 ? updatesMap[item.editorProject.cloudTemplateId]
@@ -766,7 +763,7 @@ export const CreatorStudioHub: React.FC<CreatorStudioHubProps> = ({
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6880]">
                         <span>{item.category === '动态时钟' ? '时钟' : item.category}</span>
                         <span>·</span>
-                        <span className="font-mono-tabular">{item.resolution}</span>
+                        <span className="font-mono-tabular">{previewSize[0]}×{previewSize[1]}</span>
                         {item.editorProject && (
                           <>
                             <span>·</span>
